@@ -1,0 +1,110 @@
+const assert = require('assert');
+const { crearContexto, cargarHoja, spreadsheetFake } = require('./helpers');
+
+const LISTA_ID = '1EwbNlmBMx3OIviplvHSJM3N4CZ3vVXgVxH208VugG3M';
+const ROPA_ID = 'ropa1';
+const SNAP_ID = 'snap1';
+
+function armar(opciones) {
+  opciones = opciones || {};
+  const ctx = crearContexto({ cargar: ['Config.gs', 'Reglas.gs', 'Planillas.gs', 'Fuentes.gs'], hoy: '2026-10-19' });
+  ctx.setupCompleto_();
+  // Fuente INGECOV
+  const lista = spreadsheetFake(LISTA_ID, 'LISTA DE EQUIPOS');
+  ctx.__planillas[LISTA_ID] = lista;
+  const header = opciones.header || ['CÓDIO INTERNO', 'CLASIFICACIÓN', 'MARCA', 'MODELO', 'N° SERIE - N° PATENTE', 'UBICACIÓN'];
+  cargarHoja(lista, 'EQUIPOS', header, opciones.filas || [
+    ['CF-03', 'CARGADORA FRONTAL', 'CATERPILLAR', '950H', 'AB123', 'Autovías'],
+    ['EX-01', 'EXCAVADORA HIDRAULICA', 'KOMATSU', 'PC200', 'S/N 1', 'Corrientes'],
+    ['CMN-03', 'CAMION VOLCADOR', 'IVECO', 'TECTOR', 'AC456', 'Autovías']
+  ]);
+  // Fuente Ropa
+  const ropa = spreadsheetFake(ROPA_ID, 'Ropa');
+  ctx.__planillas[ROPA_ID] = ropa;
+  cargarHoja(ropa, 'PERSONAL', ['LEGAJO', 'APELLIDO Y NOMBRE', 'ACTIVO'], [[101, 'PÉREZ JUAN', 'SI'], [102, 'GÓMEZ ANA', 'NO']]);
+  // Snapshot INGECOV (planilla)
+  const snap = spreadsheetFake(SNAP_ID, 'snapshot');
+  ctx.__planillas[SNAP_ID] = snap;
+  cargarHoja(snap, 'SVC_PANELPROG', ['CODIGO', 'DESCRIPCION', 'PATENTE', 'ULT FECHA', 'ULT HRKM', 'EST HRKM', 'OPERATIVIDAD', 'FRECUENCIA', 'ESTADO'],
+    [['CF-03', 'Cargadora', 'AB123', '2026-10-01', 4812, 4850, 'ok', 250, 'ok']]);
+  // CONFIG
+  const cfg = ctx.ss_().getSheetByName('CONFIG');
+  cfg.filas.forEach((f) => {
+    if (f[0] === 'SHEET_ROPA_ID') f[1] = ROPA_ID;
+    if (f[0] === 'SNAPSHOT_SHEET_ID') f[1] = SNAP_ID;
+  });
+  return ctx;
+}
+
+module.exports = {
+  'syncEquipos_ importa solo pesados con header renombrado de INGECOV': () => {
+    const ctx = armar();
+    const r = ctx.syncEquipos_();
+    const eq = ctx.leer_('EQUIPOS');
+    assert.strictEqual(r.altas, 2);
+    assert.strictEqual(eq.map((e) => e.codigo).sort().join('|'), 'CF-03|EX-01');
+    const cf = eq.find((e) => e.codigo === 'CF-03');
+    assert.strictEqual(cf.tipo_rodado, 'rodante');
+    assert.strictEqual(cf.activo_tarja, 'SI');
+    assert.strictEqual(cf.lugar, 'Autovías');
+    assert.strictEqual(cf.patente, 'AB123');
+    assert.strictEqual(eq.find((e) => e.codigo === 'EX-01').tipo_rodado, 'oruga');
+  },
+  'syncEquipos_ no pisa tipo_rodado ni activo_tarja editados a mano': () => {
+    const ctx = armar();
+    ctx.syncEquipos_();
+    const cf = ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03');
+    ctx.actualizar_('EQUIPOS', cf._fila, { tipo_rodado: 'oruga', activo_tarja: 'NO' });
+    ctx.syncEquipos_();
+    const cf2 = ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03');
+    assert.strictEqual(cf2.tipo_rodado, 'oruga');
+    assert.strictEqual(cf2.activo_tarja, 'NO');
+    assert.strictEqual(ctx.leer_('EQUIPOS').length, 2, 'no duplica');
+  },
+  'syncEquipos_ sin columna de código: no toca EQUIPOS, deja diagnóstico y avisa una vez': () => {
+    const ctx = armar();
+    ctx.syncEquipos_();
+    ctx.__planillas[LISTA_ID].getSheetByName('EQUIPOS').filas[0][0] = 'OTRA COSA';
+    const r = ctx.syncEquipos_();
+    assert.ok(r.faltan.indexOf('CODIGO') >= 0);
+    assert.strictEqual(ctx.leer_('EQUIPOS').length, 2);
+    assert.ok(/CODIGO/.test(ctx.prop_('DIAG_EQUIPOS')));
+    ctx.syncEquipos_();
+    assert.strictEqual(ctx.__avisos.length, 1, 'un solo aviso por día');
+    assert.strictEqual(ctx.__avisos[0].aviso.prioridad, 'critica');
+  },
+  'syncEquipos_ exitoso limpia el diagnóstico anterior': () => {
+    const ctx = armar();
+    ctx.setProp_('DIAG_EQUIPOS', 'viejo');
+    ctx.syncEquipos_();
+    assert.strictEqual(ctx.prop_('DIAG_EQUIPOS'), null);
+  },
+  'syncPersonal_ trae solo activos de la hoja PERSONAL de Ropa': () => {
+    const ctx = armar();
+    const r = ctx.syncPersonal_();
+    assert.strictEqual(r.total, 1);
+    const p = ctx.leer_('PERSONAL');
+    assert.strictEqual(p.length, 1);
+    assert.strictEqual(String(p[0].legajo), '101');
+    assert.strictEqual(p[0].nombre, 'PÉREZ JUAN');
+  },
+  'syncPersonal_ sin SHEET_ROPA_ID deja diagnóstico': () => {
+    const ctx = armar();
+    ctx.ss_().getSheetByName('CONFIG').filas.forEach((f) => { if (f[0] === 'SHEET_ROPA_ID') f[1] = ''; });
+    const r = ctx.syncPersonal_();
+    assert.ok(r.faltan.length > 0);
+    assert.ok(ctx.prop_('DIAG_PERSONAL'));
+  },
+  'sembrarHorometros_ toma ULT HRKM del snapshot solo para equipos sin horómetro': () => {
+    const ctx = armar();
+    ctx.syncEquipos_();
+    const r = ctx.sembrarHorometros_();
+    assert.strictEqual(r.sembrados, 1);
+    const cf = ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03');
+    assert.strictEqual(Number(cf.horom_tarja), 4812);
+    assert.strictEqual(cf.origen_horom, 'INGECOV');
+    ctx.actualizar_('EQUIPOS', cf._fila, { horom_tarja: 5000, origen_horom: 'TARJA' });
+    ctx.sembrarHorometros_();
+    assert.strictEqual(Number(ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03').horom_tarja), 5000);
+  }
+};
