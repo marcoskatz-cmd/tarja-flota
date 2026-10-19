@@ -9,7 +9,7 @@ const vm = require('vm');
 const RAIZ = path.join(__dirname, '..');
 
 /** Archivos que se cargan en el contexto, en orden. */
-const CARGAR = ['Config.gs', 'Reglas.gs', 'Planillas.gs', 'Fotos.gs', 'Fuentes.gs', 'Tarjas.gs', 'Sesion.gs', 'Panel.gs', 'Triggers.gs', 'Mantenimiento.gs', 'Codigo.gs'];
+const CARGAR = ['Config.gs', 'Reglas.gs', 'Planillas.gs', 'Fotos.gs', 'IngecoAvisos.gs', 'Fuentes.gs', 'Tarjas.gs', 'Sesion.gs', 'Panel.gs', 'Triggers.gs', 'Mantenimiento.gs', 'Codigo.gs'];
 
 // ---------- stub de Sheets en memoria ----------
 
