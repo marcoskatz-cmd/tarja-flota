@@ -1,28 +1,32 @@
 /**
  * Service worker: cachea el armazón de la app para que abra sin señal.
  *
- * A la API NO se le hace caché nunca: los datos siempre salen del servidor, y
- * lo que no se puede enviar queda en la cola de IndexedDB, no acá.
+ * A la API NO se le hace caché nunca: los datos de referencia se guardan en
+ * localStorage (datos.js) y lo que no se puede enviar queda en IndexedDB.
+ * Las teselas del mapa (panel) tampoco se cachean.
  */
 
-const CACHE = 'tarja-v10';
-// Los assets van con ?v=N igual que en el HTML: si no coinciden, el caché
-// nunca da en el clavo y además el navegador se queda con la versión vieja.
-// Al publicar un cambio hay que subir el número acá y en los tres HTML.
-const V = '10';
+const CACHE = 'tarja-flota-v1';
+// Los assets van con ?v=N igual que en el HTML. Al publicar un cambio hay que
+// subir el número acá y en index.html, panel.html y ayuda.html.
+const V = '1';
 const ARMAZON = [
   './',
   './index.html',
-  './panel.html',
   './ayuda.html',
   './manifest.json',
   './icono.svg',
+  './icono-maskable.svg',
   './logos/ingeco.png',
   './estilo.css?v=' + V,
+  './reglas.js?v=' + V,
+  './cola.js?v=' + V,
   './api.js?v=' + V,
+  './datos.js?v=' + V,
+  './identidad.js?v=' + V,
+  './selector.js?v=' + V,
   './camara.js?v=' + V,
-  './app.js?v=' + V,
-  './panel.js?v=' + V
+  './app.js?v=' + V
 ];
 
 self.addEventListener('install', (e) => {
@@ -39,11 +43,13 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.hostname.indexOf('script.google.com') !== -1) return;
+  if (e.request.method !== 'GET') return;
+  if (url.hostname.indexOf('script.google.com') !== -1) return;
+  if (url.hostname.indexOf('tile.openstreetmap.org') !== -1 || url.hostname.indexOf('unpkg.com') !== -1) return;
 
-  // Red primero para tener siempre la última versión; caché como red de seguridad.
+  // Red primero (sin caché HTTP de Pages) para tener la última versión; caché como red de seguridad.
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((r) => {
         const copia = r.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copia));

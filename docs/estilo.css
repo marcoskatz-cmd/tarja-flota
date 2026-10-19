@@ -173,38 +173,6 @@ canvas.firma {
 
 .cargando { text-align: center; color: var(--tenue); padding: 2.5rem 1rem; }
 
-/* ---- banda de la UTE ----
-   Las dos constructoras que forman la UTE de la obra. Aparece al pie del
-   operador y en la pantalla de certificación, que es la que se muestra afuera.
-   Si un archivo falta, el logo se oculta solo en vez de dejar el ícono roto. */
-.ute {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  padding: 1rem;
-}
-.ute img { height: 34px; width: auto; display: block; }
-/* El archivo de INGECO trae mucho margen azul horneado adentro, así que a la
-   misma altura su marca se ve la mitad de grande que la de Casella. Se compensa
-   dándole más alto para que las dos pesen ópticamente igual. */
-.ute img.ingeco { height: 50px; }
-/* Oculto por defecto: si el logo anterior no cargó y se quitó del DOM, el
-   separador deja de tener un img delante y no queda una raya suelta. */
-.ute .separador { display: none; width: 1px; height: 26px; background: var(--borde); }
-.ute img + .separador { display: block; }
-.ute .leyenda {
-  width: 100%;
-  text-align: center;
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--tenue);
-}
-/* Fondo blanco para la banda: el logo de Casella viene en JPEG con fondo blanco
-   y sobre el gris de la app quedaba como un recuadro pegoteado. */
-.ute { background: #ffffff; border-top: 1px solid var(--borde); }
 
 /* ---- pie del operador ----
    "Cómo se usa" primero, que es lo único que el operario puede llegar a
@@ -244,3 +212,37 @@ canvas.firma {
   padding: 0.4rem 0.7rem;
   font-size: 0.85rem;
 }
+
+/* ---- marca ---- */
+.marca { display: flex; justify-content: center; padding: 1rem; background: #fff; border-top: 1px solid var(--borde); }
+.marca img.ingeco { height: 44px; width: auto; display: block; }
+
+/* ---- encabezado: quién y qué equipo ---- */
+header .derecha { display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem; }
+header button.quien { font-weight: 600; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- listas de opciones (nómina, motivos) ---- */
+.lista { display: grid; gap: 0.4rem; margin-top: 0.6rem; }
+button.opcion {
+  width: 100%; text-align: left; padding: 0.85rem 0.9rem; font-size: 1rem;
+  border: 1px solid var(--borde); border-radius: 0.7rem; background: var(--tarjeta); color: var(--texto);
+}
+button.opcion.elegido { border-color: var(--acento); background: var(--acento-suave); color: var(--acento); font-weight: 700; }
+.opciones-col { display: grid; gap: 0.4rem; }
+
+/* ---- selector de equipo ---- */
+h3.grupo { font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tenue); margin: 1.1rem 0 0.5rem; }
+button.equipo-card {
+  width: 100%; text-align: left; padding: 0.9rem 1rem; margin-bottom: 0.6rem;
+  border: 2px solid var(--borde); border-radius: 0.9rem; background: var(--tarjeta); color: var(--texto);
+}
+button.equipo-card:active, .confirmar { border-color: var(--acento); }
+.codigo { font-size: 1.7rem; font-weight: 800; letter-spacing: 0.03em; color: #1e3a8a; line-height: 1.1; }
+.desc { font-size: 0.95rem; margin-top: 0.15rem; }
+.pistas { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.55rem; }
+.pistas .chip { background: #e8eef7; color: #1e3a8a; }
+.pistas .chip.alerta { background: var(--alerta-suave); color: var(--alerta); }
+.tarjeta.centro { text-align: center; }
+.tarjeta.centro .codigo { font-size: 2.2rem; }
+.tarjeta.confirmar .codigo { font-size: 2.2rem; }
+input[type="search"] { margin-bottom: 0.3rem; }

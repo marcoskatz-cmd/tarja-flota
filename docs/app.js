@@ -1,45 +1,40 @@
 /**
- * PWA del operador.
+ * PWA del operario.
  *
  * Criterio: una sola cosa en pantalla por vez, el botón de avanzar aparece
  * solamente cuando el paso está completo, y nada de texto libre donde alcance
- * con elegir. El objetivo es que alguien que nunca la vio termine en menos de
- * un minuto sin leer nada.
+ * con elegir. Alguien que nunca la vio tiene que terminar sin leer nada.
  *
- * Orden de la jornada:
- *   Apertura → nombre y firma → foto del monitor → foto del horómetro con el
- *              valor tipeado debajo → checklist
- *   Cierre   → foto del horómetro con el valor tipeado debajo
+ * Orden:
+ *   Primera vez → ¿quién sos? (nómina) → ¿qué equipo? (con pistas y confirmación)
+ *   Apertura    → foto del horómetro con el valor debajo → checklist (una vez por
+ *                 equipo y día) → firma → enviar
+ *   Cierre      → foto del horómetro con el valor debajo
+ *   Quedó abierta por otro → cerrarla yo (foto + valor + motivo) → después abro la mía
  *
- * Se pueden abrir varias jornadas en el mismo día, de a una por vez: hay que
- * cerrar la anterior antes de empezar otra.
+ * Funciona sin señal: datos de referencia cacheados (Datos), cargas en cola
+ * (API) y estado de la jornada abierta recordado en el celular.
  */
 
 const app = document.getElementById('app');
 const colaAviso = document.getElementById('colaAviso');
 const hEquipo = document.getElementById('hEquipo');
 const hFecha = document.getElementById('hFecha');
+const hQuien = document.getElementById('hQuien');
 const btnCambiar = document.getElementById('btnCambiar');
 
-const EQUIPOS = ['PC200', 'HIDROMEK'];
-
-let estado = null;      // respuesta de la API
-let borrador = null;    // lo que el operador viene cargando
+let estado = null;      // respuesta de `estado` (o armada desde caché)
+let borrador = null;    // lo que el operario viene cargando
+let equipo = null;      // equipo elegido (objeto de Datos)
+let quien = null;       // identidad {legajo, nombre, manual}
 
 // ---------- utilidades ----------
 
-function dispositivo() {
-  let d = localStorage.getItem('dispositivo');
-  if (!d) { d = crypto.randomUUID(); localStorage.setItem('dispositivo', d); }
-  return d;
-}
-function equipoElegido() { return localStorage.getItem('equipo'); }
-
 function pintar(html) { app.innerHTML = html; }
-
-function aviso(tipo, texto) {
-  return `<div class="aviso ${tipo}">${texto}</div>`;
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+function aviso(tipo, texto) { return `<div class="aviso ${tipo}">${texto}</div>`; }
 
 function conError(fn) {
   return async (...args) => {
@@ -54,14 +49,22 @@ function conError(fn) {
   };
 }
 
-/**
- * La hora exacta la pone el backend al guardar. Acá solo sellamos la de
- * referencia del dispositivo junto a la fecha del servidor, que es la que manda.
- */
-function horaLocalDelServidor() {
+function horaLocal() {
   const d = new Date();
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
+function hoyLocal() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Estado de jornada abierta recordado en el celular (para operar sin señal).
+function claveAbierta(codigo) { return 'tf_abierta_' + codigo; }
+function abiertaLocal(codigo) {
+  try { return JSON.parse(localStorage.getItem(claveAbierta(codigo)) || 'null'); } catch (e) { return null; }
+}
+function guardarAbiertaLocal(codigo, info) { localStorage.setItem(claveAbierta(codigo), JSON.stringify(info)); }
+function borrarAbiertaLocal(codigo) { localStorage.removeItem(claveAbierta(codigo)); }
 
 // ---------- cargas guardadas sin señal ----------
 
@@ -70,8 +73,7 @@ function pintarCola(pendientes) {
   colaAviso.hidden = false;
   const n = pendientes.length;
   colaAviso.innerHTML = `
-    <span>${n} carga${n === 1 ? '' : 's'} guardada${n === 1 ? '' : 's'} en el celular,
-      sin enviar todavía.</span>
+    <span>${n} carga${n === 1 ? '' : 's'} guardada${n === 1 ? '' : 's'} en el celular, sin enviar todavía.</span>
     <button id="btnEnviarCola">Enviar ahora</button>`;
   document.getElementById('btnEnviarCola').onclick = async (ev) => {
     ev.target.disabled = true;
@@ -84,74 +86,108 @@ API.alCambiarCola(pintarCola);
 
 // ---------- arranque ----------
 
+function pintarEncabezado() {
+  hQuien.textContent = quien ? quien.nombre : '';
+  hQuien.hidden = !quien;
+  hEquipo.textContent = equipo ? equipo.codigo : 'Tarja de equipos';
+  hFecha.textContent = equipo ? (equipo.descripcion || '') : '';
+  btnCambiar.hidden = !equipo;
+}
+
 async function iniciar() {
-  const eq = equipoElegido();
-  if (!eq) return pantallaSelector();
-  btnCambiar.hidden = false;
-  btnCambiar.onclick = pantallaSelector;
-  hEquipo.textContent = eq;
   pintar('<div class="cargando">Cargando…</div>');
+  try {
+    await Datos.cargar();
+  } catch (e) {
+    return pintar(aviso('alerta', esc(e.message)) + `<button class="principal" onclick="location.reload()">Reintentar</button>`);
+  }
+
+  quien = Identidad.actual();
+  if (!quien) return pantallaIdentidad();
+
+  const cod = Selector.actual();
+  equipo = cod ? Datos.equipo(cod) : null;
+  if (!equipo) return pantallaSelector();
+  pintarEncabezado();
 
   // Antes que nada, mandar lo que haya quedado en cola sin señal.
   await API.sincronizar(() => {});
   const cola = await API.pendientesEnCola();
   pintarCola(cola);
 
-  // Si la carga de este equipo todavía está en cola, el servidor no la conoce y
-  // diría "abrí la jornada" de nuevo. Hay que frenar acá, o el operario carga
-  // todo dos veces.
-  const propia = cola.filter((c) => c.equipo === eq);
-  if (propia.length) return pantallaEnCola(propia[0]);
+  // Si la carga de este equipo todavía está en cola, el servidor no la conoce.
+  const propia = cola.filter((c) => c.equipo === equipo.codigo);
+  if (propia.length) return pantallaEnCola(propia);
 
   try {
-    estado = await API.llamar('estado', { equipo: eq });
+    estado = await API.llamar('estado', { equipo: equipo.codigo });
+    estado.offline = false;
+    if (estado.abierta) guardarAbiertaLocal(equipo.codigo, { tarja_id: estado.abierta.tarja_id, operador: estado.abierta.operador, legajo: estado.abierta.legajo, horom_ini: estado.abierta.horom_ini, ts: estado.abierta.ts_apertura, enviada: true });
+    else borrarAbiertaLocal(equipo.codigo);
   } catch (e) {
-    const cola = await API.pendientesEnCola();
-    return pintar(
-      aviso('alerta', 'Sin conexión.' + (cola.length
-        ? ` Hay ${cola.length} carga(s) guardada(s) en el celular; se van a enviar solas cuando vuelva la señal.`
-        : ' Volvé a intentar cuando tengas señal.')) +
-      `<button class="principal" onclick="location.reload()">Reintentar</button>`
-    );
+    estado = estadoDesdeCache();
   }
-
-  hFecha.textContent = estado.fecha;
-  if (estado.paso === 'apertura') return aperturaIdentidad();
-  if (estado.paso === 'cierre') return cierreFoto();
-  return pantallaListo();  // jornadas cerradas hoy, ninguna abierta
+  pintarEncabezado();
+  pantallaInicio();
 }
 
-// ---------- selector de equipo ----------
+/** Sin señal: lo que el celular sabe del equipo alcanza para operar. */
+function estadoDesdeCache() {
+  const ab = abiertaLocal(equipo.codigo);
+  return {
+    offline: true,
+    fecha: hoyLocal(),
+    equipo: equipo.codigo,
+    tipo_rodado: equipo.tipo_rodado,
+    abierta: ab ? { tarja_id: ab.tarja_id || '', operador: ab.operador, legajo: ab.legajo, horom_ini: ab.horom_ini, ts_apertura: ab.ts, op_id_apertura: ab.op_id } : null,
+    sugerido: Number(equipo.horom_tarja || 0),
+    origen_horom: equipo.origen_horom || '',
+    checklist_pendiente: !(ab && ab.fecha === hoyLocal()) && localStorage.getItem('tf_checklist_' + equipo.codigo) !== hoyLocal(),
+    items: Datos.itemsPara(equipo.tipo_rodado),
+    motivos_cierre_tercero: ['Se olvidó de cerrar', 'Cambio de turno', 'Otro']
+  };
+}
+
+function esMia(abierta) {
+  if (!abierta) return false;
+  if (quien.legajo && abierta.legajo) return String(quien.legajo) === String(abierta.legajo);
+  return normalizarTexto_(quien.nombre) === normalizarTexto_(abierta.operador);
+}
+
+function pantallaInicio() {
+  const sinSenal = estado.offline ? aviso('alerta', 'Sin señal. Podés cargar igual: se guarda en el celular y se envía solo después.') : '';
+  if (estado.abierta && !esMia(estado.abierta)) return pantallaAbiertaPorOtro(sinSenal);
+  if (estado.abierta) return pantallaCierre(sinSenal);
+  pintar(`
+    ${sinSenal}
+    <div class="tarjeta centro">
+      <div class="codigo">${esc(equipo.codigo)}</div>
+      <div class="desc">${esc(equipo.descripcion || '')}</div>
+      <div class="tenue">Último horómetro: <strong>${estado.sugerido}</strong>${estado.origen_horom === 'INGECOV' ? ' (según mantenimiento)' : ''}</div>
+    </div>
+    <button class="principal" id="abrir">Empezar la jornada</button>
+  `);
+  document.getElementById('abrir').onclick = aperturaHorometro;
+}
+
+// ---------- identidad y equipo ----------
+
+function pantallaIdentidad() {
+  equipo = null; pintarEncabezado();
+  Identidad.pantalla(app, (id) => { quien = id; iniciar(); });
+}
 
 function pantallaSelector() {
-  btnCambiar.hidden = true;
-  hEquipo.textContent = 'Elegí el equipo';
-  hFecha.textContent = '';
-  pintar(`
-    <h2>¿En qué máquina estás?</h2>
-    <p class="ayuda">Se guarda en este celular. Solo hay que elegirlo la primera vez.</p>
-    <div class="grande">
-      ${EQUIPOS.map((e) => `<button data-eq="${e}">${e}</button>`).join('')}
-    </div>
-  `);
-  app.querySelectorAll('[data-eq]').forEach((b) => {
-    b.onclick = conError(async () => {
-      const eq = b.dataset.eq;
-      localStorage.setItem('equipo', eq);
-      try { await API.llamar('vincular', { equipo: eq, dispositivo: dispositivo() }); }
-      catch (e) { /* el vínculo es informativo: si no hay señal, no bloquea */ }
-      iniciar();
-    });
-  });
+  pintarEncabezado();
+  Selector.pantalla(app, (e) => { equipo = e; iniciar(); });
 }
+
+btnCambiar.onclick = () => { Selector.borrar(); pantallaSelector(); };
+hQuien.onclick = () => { Identidad.borrar(); pantallaIdentidad(); };
 
 // ---------- cámara ----------
 
-/**
- * Cámara en vivo con una indicación corta. La galería no se ofrece a propósito:
- * la foto tiene que ser del momento.
- */
-function pantallaCamara({ titulo, indicacion, alTomar, conValor }) {
+function pantallaCamara({ titulo, indicacion, conValor }) {
   pintar(`
     <h2>${titulo}</h2>
     <div class="camara tarjeta" style="padding:0">
@@ -159,9 +195,12 @@ function pantallaCamara({ titulo, indicacion, alTomar, conValor }) {
       <div class="indicacion">${indicacion}</div>
     </div>
     <button class="principal" id="btnFoto" disabled>Preparando cámara…</button>
+    <div style="height:.5rem"></div>
+    <button class="secundaria" id="btnVolver">Volver</button>
   `);
   const vid = document.getElementById('vid');
   const btn = document.getElementById('btnFoto');
+  document.getElementById('btnVolver').onclick = () => { Camara.cerrarCamara(); pantallaInicio(); };
 
   Camara.abrirCamara(vid).then(() => {
     btn.disabled = false;
@@ -174,117 +213,17 @@ function pantallaCamara({ titulo, indicacion, alTomar, conValor }) {
   });
 
   btn.onclick = conError(async () => {
-    const foto = Camara.capturar(vid, estado.equipo, estado.fecha + ' ' + horaLocalDelServidor());
+    const foto = Camara.capturar(vid, equipo.codigo, estado.fecha + ' ' + horaLocal());
     Camara.cerrarCamara();
-    const volver = () => pantallaCamara({ titulo, indicacion, alTomar, conValor });
-    if (conValor) return conValor(foto, volver);
-    confirmarFoto(foto, titulo, alTomar, volver);
+    const volver = () => pantallaCamara({ titulo, indicacion, conValor });
+    conValor(foto, volver);
   });
 }
 
-function confirmarFoto(foto, titulo, alAceptar, alRepetir) {
-  pintar(`
-    <h2>${titulo}</h2>
-    <p class="ayuda">¿Se lee bien? Si no, repetila.</p>
-    <img class="previa" src="${foto}" alt="Foto tomada">
-    <div style="height:.9rem"></div>
-    <button class="principal" id="ok">Sí, continuar</button>
-    <div style="height:.5rem"></div>
-    <button class="secundaria" id="rep">Repetir la foto</button>
-  `);
-  document.getElementById('ok').onclick = conError(() => alAceptar(foto));
-  document.getElementById('rep').onclick = alRepetir;
-}
-
-// ---------- apertura: nombre y firma ----------
-
-function aperturaIdentidad() {
-  borrador = { checklist: [] };
-  pintar(`
-    <h2>¿Quién maneja hoy?</h2>
-    <p class="ayuda">Se carga una sola vez, al empezar la jornada.</p>
-    <div class="tarjeta">
-      <label>Nombre y apellido</label>
-      <input type="text" id="nombre" list="ops" autocomplete="off" placeholder="Escribí tu nombre">
-      <datalist id="ops">${estado.operadores.map((o) => `<option value="${o}">`).join('')}</datalist>
-      <label>Firma</label>
-      <canvas class="firma" id="canvas"></canvas>
-      <div style="height:.5rem"></div>
-      <button class="secundaria" id="borrar">Borrar la firma</button>
-    </div>
-    <button class="principal" id="seguir" disabled>Continuar</button>
-  `);
-
-  const canvas = document.getElementById('canvas');
-  const nombre = document.getElementById('nombre');
-  const seguir = document.getElementById('seguir');
-  const ctx = canvas.getContext('2d');
-  let firmado = false;
-
-  // El canvas se dimensiona en pixeles reales para que la firma no salga borrosa.
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
-  ctx.lineWidth = 2.5;
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = '#14212c';
-
-  let dibujando = false;
-  const punto = (e) => {
-    const r = canvas.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
-  };
-  canvas.addEventListener('pointerdown', (e) => {
-    e.preventDefault(); dibujando = true;
-    const p = punto(e); ctx.beginPath(); ctx.moveTo(p.x, p.y);
-  });
-  canvas.addEventListener('pointermove', (e) => {
-    if (!dibujando) return;
-    e.preventDefault();
-    const p = punto(e);
-    ctx.lineTo(p.x, p.y); ctx.stroke();
-    firmado = true; revisar();
-  });
-  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => {
-    canvas.addEventListener(ev, () => { dibujando = false; });
-  });
-
-  function revisar() { seguir.disabled = !(firmado && nombre.value.trim().length >= 3); }
-  nombre.oninput = revisar;
-
-  document.getElementById('borrar').onclick = () => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    firmado = false; revisar();
-  };
-
-  seguir.onclick = conError(() => {
-    // Fondo blanco: el canvas transparente se ve negro al abrirlo desde Drive.
-    const plano = document.createElement('canvas');
-    plano.width = canvas.width; plano.height = canvas.height;
-    const c2 = plano.getContext('2d');
-    c2.fillStyle = '#ffffff';
-    c2.fillRect(0, 0, plano.width, plano.height);
-    c2.drawImage(canvas, 0, 0);
-
-    borrador.operador = nombre.value.trim();
-    borrador.firma = plano.toDataURL('image/jpeg', 0.8);
-    aperturaMonitor();
-  });
-}
-
-// ---------- apertura: fotos ----------
-
-function aperturaMonitor() {
-  pantallaCamara({
-    titulo: 'Foto del monitor de cabina',
-    indicacion: 'Con el equipo en marcha y después de un minuto de funcionamiento. Que se vea toda la pantalla.',
-    alTomar: (foto) => { borrador.foto_monitor = foto; aperturaHorometro(); }
-  });
-}
+// ---------- apertura ----------
 
 function aperturaHorometro() {
+  borrador = { checklist: [], confirmo_equipo: false };
   pantallaCamara({
     titulo: 'Foto del horómetro',
     indicacion: 'Que se lean los números completos.',
@@ -294,6 +233,7 @@ function aperturaHorometro() {
 
 /** La foto arriba y el número debajo: se tipea mirando la misma imagen. */
 function aperturaValor(foto, repetir) {
+  const sugerido = Number(estado.sugerido || 0);
   pintar(`
     <h2>Horómetro</h2>
     <img class="previa" src="${foto}" alt="Foto del horómetro">
@@ -301,10 +241,8 @@ function aperturaValor(foto, repetir) {
     <button class="secundaria" id="rep">Repetir la foto</button>
     <div class="tarjeta" style="margin-top:.9rem">
       <label>Escribí lo que muestra el horómetro</label>
-      <input type="number" id="valor" inputmode="decimal" step="0.1" value="${estado.horom_sugerido}">
-      <div class="tenue" style="margin-top:.5rem">
-        Viene del cierre de ayer: <strong>${estado.horom_sugerido}</strong>.
-      </div>
+      <input type="number" id="valor" inputmode="decimal" step="0.1" value="${sugerido}">
+      <div class="tenue" style="margin-top:.5rem">Último registrado en ${esc(equipo.codigo)}: <strong>${sugerido}</strong>.</div>
       <div id="bloqueMotivo" hidden>
         <label>¿Por qué no coincide?</label>
         <textarea id="motivo" rows="3" placeholder="Ej.: el horómetro se reinició, o el valor anterior se cargó mal"></textarea>
@@ -315,27 +253,42 @@ function aperturaValor(foto, repetir) {
 
   const valor = document.getElementById('valor');
   const bloque = document.getElementById('bloqueMotivo');
-  // El motivo aparece solo cuando el número deja de coincidir: sin pedirlo antes
-  // de tiempo, y sin dejar pasar una corrección sin explicación.
-  valor.oninput = () => {
-    bloque.hidden = Math.abs(Number(valor.value) - estado.horom_sugerido) <= 0.001;
-  };
+  valor.oninput = () => { bloque.hidden = Math.abs(Number(valor.value) - sugerido) <= 0.001; };
   document.getElementById('rep').onclick = repetir;
 
   document.getElementById('seguir').onclick = conError(() => {
     const v = Number(valor.value);
-    if (valor.value === '' || !isFinite(v) || v < 0) {
-      throw new Error('El valor del horómetro no es válido.');
-    }
+    if (valor.value === '' || !isFinite(v) || v < 0) throw new Error('El valor del horómetro no es válido.');
     const motivo = document.getElementById('motivo').value.trim();
-    if (Math.abs(v - estado.horom_sugerido) > 0.001 && !motivo) {
-      throw new Error('El número no coincide con el de ayer: hace falta explicar por qué.');
-    }
+    const corregido = Math.abs(v - sugerido) > 0.001;
+    if (corregido && !motivo) throw new Error('El número no coincide con el último registrado: hace falta explicar por qué.');
     borrador.foto_horometro = foto;
     borrador.horom_ini = v;
     borrador.motivo_correccion = motivo;
-    aperturaChecklist();
+    // Misma regla que el servidor, aplicada antes para no esperar la red.
+    if (corregido && diferenciaSospechosa_(v, sugerido, estado.origen_horom, 50) && !borrador.confirmo_equipo) {
+      return preguntarEquipo(v, sugerido, () => { borrador.confirmo_equipo = true; siguienteTrasHorometro(); });
+    }
+    siguienteTrasHorometro();
   });
+}
+
+function preguntarEquipo(v, sugerido, alConfirmar) {
+  pintar(`
+    ${aviso('alerta', `El horómetro que tipeaste (<strong>${v}</strong>) está a <strong>${Math.abs(v - sugerido).toFixed(0)} hs</strong> del último registrado (${sugerido}).`)}
+    <h2>¿Seguro que estás en ${esc(equipo.codigo)}?</h2>
+    <p class="ayuda">${esc(equipo.descripcion || '')}${equipo.lugar ? ' · ' + esc(equipo.lugar) : ''}</p>
+    <button class="principal" id="si">Sí, es ${esc(equipo.codigo)}</button>
+    <div style="height:.5rem"></div>
+    <button class="secundaria" id="no">No, cambiar equipo</button>
+  `);
+  document.getElementById('si').onclick = alConfirmar;
+  document.getElementById('no').onclick = () => { Selector.borrar(); pantallaSelector(); };
+}
+
+function siguienteTrasHorometro() {
+  if (estado.checklist_pendiente) return aperturaChecklist();
+  aperturaFirma();
 }
 
 // ---------- apertura: checklist ----------
@@ -344,23 +297,23 @@ function aperturaChecklist() {
   const items = estado.items;
   pintar(`
     <h2>Revisión del equipo</h2>
-    <p class="ayuda">Un toque por ítem. Si algo está mal, marcá Problema y sacá una foto.</p>
+    <p class="ayuda">Un toque por ítem. Si algo está mal, marcá Falla y sacá una foto.</p>
     <div class="tarjeta">
       ${items.map((i) => `
         <div class="item" data-orden="${i.orden}">
-          <div class="texto">${i.orden}. ${i.item}</div>
+          <div class="texto">${i.orden}. ${esc(i.item)}</div>
           <div class="opciones">
             <button class="ok" data-estado="OK">✓ Bien</button>
-            <button class="problema" data-estado="PROBLEMA">✕ Problema</button>
+            <button class="problema" data-estado="PROBLEMA">✕ Falla</button>
           </div>
           <div class="detalle" hidden></div>
         </div>`).join('')}
     </div>
-    <button class="principal" id="enviar" disabled>Falta responder</button>
+    <button class="principal" id="seguir" disabled>Falta responder</button>
   `);
 
   const respuestas = {};
-  const btn = document.getElementById('enviar');
+  const btn = document.getElementById('seguir');
 
   function revisar() {
     const completo = items.every((i) => {
@@ -368,27 +321,25 @@ function aperturaChecklist() {
       return r && (r.estado === 'OK' || (r.foto && r.comentario));
     });
     btn.disabled = !completo;
-    btn.textContent = completo
-      ? 'Abrir la jornada'
-      : `Falta responder (${items.filter((i) => respuestas[i.orden]).length}/${items.length})`;
+    btn.textContent = completo ? 'Continuar' : `Falta responder (${items.filter((i) => respuestas[i.orden]).length}/${items.length})`;
   }
 
   function armarDetalle(item, r, detalle) {
     detalle.hidden = false;
     detalle.innerHTML = `
-      <label>Foto del problema</label>
+      <label>Foto de la falla</label>
       ${r.foto ? `<img class="previa" src="${r.foto}" alt="">` : ''}
       <div style="height:.5rem"></div>
       <button class="secundaria btn-foto">${r.foto ? 'Repetir la foto' : 'Sacar foto'}</button>
       <label>¿Qué pasa?</label>
-      <textarea rows="2" placeholder="Contá brevemente qué viste">${r.comentario || ''}</textarea>`;
+      <textarea rows="2" placeholder="Contá brevemente qué viste">${esc(r.comentario || '')}</textarea>`;
     const txt = detalle.querySelector('textarea');
     txt.oninput = () => { r.comentario = txt.value.trim(); revisar(); };
     detalle.querySelector('.btn-foto').onclick = conError(() => {
       pantallaCamara({
         titulo: item.item,
-        indicacion: 'Que se vea el problema.',
-        alTomar: (f) => aperturaChecklistRestaurar(respuestas, f, item.orden)
+        indicacion: 'Que se vea la falla.',
+        conValor: (f) => aperturaChecklistRestaurar(respuestas, f, item.orden)
       });
     });
   }
@@ -403,8 +354,7 @@ function aperturaChecklist() {
         b.classList.add('elegido');
         if (b.dataset.estado === 'OK') {
           respuestas[orden] = { orden, estado: 'OK' };
-          detalle.hidden = true;
-          detalle.innerHTML = '';
+          detalle.hidden = true; detalle.innerHTML = '';
           return revisar();
         }
         respuestas[orden] = { orden, estado: 'PROBLEMA', foto: null, comentario: '' };
@@ -414,7 +364,6 @@ function aperturaChecklist() {
     });
   });
 
-  // Si venimos de sacar una foto de un problema, repintamos con lo ya cargado.
   if (aperturaChecklist._restaurar) {
     const { previas, foto, orden } = aperturaChecklist._restaurar;
     aperturaChecklist._restaurar = null;
@@ -430,23 +379,9 @@ function aperturaChecklist() {
     revisar();
   }
 
-  btn.onclick = conError(async () => {
-    btn.disabled = true;
-    btn.textContent = 'Enviando…';
-    const u = Camara.ubicacion();
-    const r = await API.enviar('abrir', {
-      equipo: estado.equipo,
-      operador: borrador.operador,
-      firma: borrador.firma,
-      foto_monitor: borrador.foto_monitor,
-      foto_horometro: borrador.foto_horometro,
-      horom_ini: borrador.horom_ini,
-      motivo_correccion: borrador.motivo_correccion,
-      checklist: items.map((i) => respuestas[i.orden]),
-      lat: u ? u.lat : '', lon: u ? u.lon : ''
-    }, estado.equipo);
-    if (r.encolado) return pantallaGuardadoSinSeñal();
-    iniciar();
+  btn.onclick = conError(() => {
+    borrador.checklist = items.map((i) => respuestas[i.orden]);
+    aperturaFirma();
   });
 }
 
@@ -455,19 +390,106 @@ function aperturaChecklistRestaurar(previas, foto, orden) {
   aperturaChecklist();
 }
 
-// ---------- cierre ----------
+// ---------- apertura: firma y envío ----------
 
-function cierreFoto() {
-  borrador = {};
-  pantallaCamara({
-    titulo: 'Foto del horómetro al terminar',
-    indicacion: 'Que se lean los números completos.',
-    conValor: (foto, repetir) => cierreValor(foto, repetir)
+function aperturaFirma() {
+  pintar(`
+    <h2>Firmá para empezar</h2>
+    <p class="ayuda">${esc(quien.nombre)} · ${esc(equipo.codigo)} · horómetro ${borrador.horom_ini}</p>
+    <div class="tarjeta">
+      <canvas class="firma" id="canvas"></canvas>
+      <div style="height:.5rem"></div>
+      <button class="secundaria" id="borrar">Borrar la firma</button>
+    </div>
+    <button class="principal" id="enviar" disabled>Abrir la jornada</button>
+  `);
+  const canvas = document.getElementById('canvas');
+  const enviar = document.getElementById('enviar');
+  const ctx = canvas.getContext('2d');
+  let firmado = false;
+
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr); ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.strokeStyle = '#14212c';
+
+  let dibujando = false;
+  const punto = (e) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); dibujando = true; const p = punto(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+  canvas.addEventListener('pointermove', (e) => { if (!dibujando) return; e.preventDefault(); const p = punto(e); ctx.lineTo(p.x, p.y); ctx.stroke(); firmado = true; enviar.disabled = false; });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => canvas.addEventListener(ev, () => { dibujando = false; }));
+  document.getElementById('borrar').onclick = () => { ctx.clearRect(0, 0, canvas.width, canvas.height); firmado = false; enviar.disabled = true; };
+
+  enviar.onclick = conError(async () => {
+    if (!firmado) return;
+    enviar.disabled = true; enviar.textContent = 'Enviando…';
+    const plano = document.createElement('canvas');
+    plano.width = canvas.width; plano.height = canvas.height;
+    const c2 = plano.getContext('2d');
+    c2.fillStyle = '#ffffff'; c2.fillRect(0, 0, plano.width, plano.height); c2.drawImage(canvas, 0, 0);
+
+    const datos = {
+      equipo: equipo.codigo,
+      legajo: quien.legajo || '',
+      operador: quien.nombre,
+      operador_manual: !!quien.manual,
+      firma: plano.toDataURL('image/jpeg', 0.8),
+      foto_horometro: borrador.foto_horometro,
+      horom_ini: borrador.horom_ini,
+      motivo_correccion: borrador.motivo_correccion || '',
+      confirmo_equipo: !!borrador.confirmo_equipo,
+      checklist: borrador.checklist || [],
+      ...Camara.gpsParaEnvio()
+    };
+    let r;
+    try {
+      r = await API.enviar('abrir', datos, equipo.codigo);
+    } catch (e) {
+      if (e.code === 'CONFIRMAR_EQUIPO') {
+        return preguntarEquipo(borrador.horom_ini, estado.sugerido, () => { borrador.confirmo_equipo = true; aperturaFirma(); });
+      }
+      throw e;
+    }
+    if (borrador.checklist.length) localStorage.setItem('tf_checklist_' + equipo.codigo, hoyLocal());
+    if (r.encolado) {
+      guardarAbiertaLocal(equipo.codigo, { op_id: r.op_id, operador: quien.nombre, legajo: quien.legajo, horom_ini: borrador.horom_ini, ts: hoyLocal() + ' ' + horaLocal(), fecha: hoyLocal(), enviada: false });
+      Datos.actualizarEquipo(equipo.codigo, { ultimo_operador: quien.nombre, ultima_tarja: hoyLocal(), abierta_por: quien.nombre });
+      return pantallaGuardadoSinSeñal('La jornada quedó abierta en este celular.');
+    }
+    Datos.actualizarEquipo(equipo.codigo, { ultimo_operador: quien.nombre, ultima_tarja: hoyLocal(), abierta_por: quien.nombre });
+    iniciar();
   });
 }
 
-function cierreValor(foto, repetir) {
-  const ini = Number(estado.tarja.horom_ini);
+// ---------- jornada abierta por otro ----------
+
+function pantallaAbiertaPorOtro(prefijo) {
+  const a = estado.abierta;
+  pintar(`
+    ${prefijo || ''}
+    ${aviso('alerta', `<strong>Quedó abierta por ${esc(a.operador)}</strong> el ${esc(String(a.ts_apertura || '').slice(0, 16))}, con horómetro <strong>${esc(a.horom_ini)}</strong>. Hay que cerrarla antes de empezar la tuya.`)}
+    <button class="principal" id="cerrarla">Cerrarla yo</button>
+    <div style="height:.5rem"></div>
+    <button class="secundaria" id="otro">Elegir otro equipo</button>
+  `);
+  document.getElementById('cerrarla').onclick = () => pantallaCierre('', true);
+  document.getElementById('otro').onclick = () => { Selector.borrar(); pantallaSelector(); };
+}
+
+// ---------- cierre ----------
+
+function pantallaCierre(prefijo, tercero) {
+  pantallaCamara({
+    titulo: 'Foto del horómetro al terminar',
+    indicacion: 'Que se lean los números completos.',
+    conValor: (foto, repetir) => cierreValor(foto, repetir, tercero)
+  });
+}
+
+function cierreValor(foto, repetir, tercero) {
+  const a = estado.abierta;
+  const ini = Number(a.horom_ini);
+  const motivos = estado.motivos_cierre_tercero || ['Se olvidó de cerrar', 'Cambio de turno', 'Otro'];
   pintar(`
     <h2>Horómetro al terminar</h2>
     <img class="previa" src="${foto}" alt="Foto del horómetro">
@@ -476,8 +498,13 @@ function cierreValor(foto, repetir) {
     <div class="tarjeta" style="margin-top:.9rem">
       <label>Escribí lo que muestra el horómetro</label>
       <input type="number" id="valor" inputmode="decimal" step="0.1" placeholder="Ej.: ${(ini + 8).toFixed(1)}">
-      <div class="tenue" style="margin-top:.5rem">A la mañana marcaba <strong>${ini}</strong>.</div>
+      <div class="tenue" style="margin-top:.5rem">Al abrir marcaba <strong>${ini}</strong>${tercero ? ` (la abrió ${esc(a.operador)})` : ''}.</div>
       <div id="calc" class="tenue" style="margin-top:.4rem"></div>
+      ${tercero ? `
+        <label>¿Por qué la cerrás vos?</label>
+        <div class="opciones-col" id="motivos">
+          ${motivos.map((m) => `<button class="opcion" data-m="${esc(m)}">${esc(m)}</button>`).join('')}
+        </div>` : ''}
     </div>
     <button class="principal" id="enviar" disabled>Cerrar la jornada</button>
   `);
@@ -485,94 +512,89 @@ function cierreValor(foto, repetir) {
   const valor = document.getElementById('valor');
   const calc = document.getElementById('calc');
   const enviar = document.getElementById('enviar');
+  let motivo = '';
   document.getElementById('rep').onclick = repetir;
 
-  valor.oninput = () => {
+  function revisar() {
     const v = Number(valor.value);
     const h = v - ini;
-    if (!valor.value || !isFinite(v)) { calc.textContent = ''; enviar.disabled = true; return; }
-    if (h < 0) { calc.textContent = 'El valor es menor que el de la mañana. Revisalo.'; enviar.disabled = true; return; }
-    if (h > 14) { calc.textContent = `Daría ${h.toFixed(1)} h de trabajo, más de las 14 permitidas. Revisalo.`; enviar.disabled = true; return; }
-    calc.textContent = `Serían ${h.toFixed(1)} horas de trabajo.`;
-    enviar.disabled = false;
-  };
+    let ok = true;
+    if (!valor.value || !isFinite(v)) { calc.textContent = ''; ok = false; }
+    else if (h < 0) { calc.textContent = 'El valor es menor que el de apertura. Revisalo.'; ok = false; }
+    else if (h > 14) { calc.textContent = `Daría ${h.toFixed(1)} h de trabajo, más de las 14 permitidas. Revisalo.`; ok = false; }
+    else calc.textContent = `Serían ${h.toFixed(1)} horas de trabajo.`;
+    if (tercero && !motivo) ok = false;
+    enviar.disabled = !ok;
+  }
+  valor.oninput = revisar;
+  if (tercero) {
+    document.querySelectorAll('#motivos .opcion').forEach((b) => {
+      b.onclick = () => {
+        document.querySelectorAll('#motivos .opcion').forEach((x) => x.classList.remove('elegido'));
+        b.classList.add('elegido'); motivo = b.dataset.m; revisar();
+      };
+    });
+  }
 
   enviar.onclick = conError(async () => {
-    enviar.disabled = true;
-    enviar.textContent = 'Enviando…';
-    const r = await API.enviar('cerrar', {
-      tarja_id: estado.tarja.id,
+    enviar.disabled = true; enviar.textContent = 'Enviando…';
+    const datos = {
       foto_horometro: foto,
-      horom_fin: Number(valor.value)
-    }, estado.equipo);
-    if (r.encolado) return pantallaGuardadoSinSeñal();
-    iniciar();
+      horom_fin: Number(valor.value),
+      legajo: quien.legajo || '',
+      operador: quien.nombre,
+      ...Camara.gpsParaEnvio()
+    };
+    if (tercero) datos.motivo_cierre_tercero = motivo;
+    if (a.tarja_id) datos.tarja_id = a.tarja_id;
+    else datos.op_id_apertura = a.op_id_apertura;
+    const r = await API.enviar('cerrar', datos, equipo.codigo);
+    borrarAbiertaLocal(equipo.codigo);
+    Datos.actualizarEquipo(equipo.codigo, { horom_tarja: Number(valor.value), origen_horom: 'TARJA', abierta_por: '', ultimo_operador: quien.nombre, ultima_tarja: hoyLocal() });
+    if (r.encolado) return pantallaGuardadoSinSeñal('La jornada quedó cerrada en este celular.');
+    pintar(aviso('info', `<strong>Jornada cerrada.</strong> ${(Number(valor.value) - ini).toFixed(1)} horas en ${esc(equipo.codigo)}.`) +
+      `<button class="principal" id="ok">Listo</button>`);
+    document.getElementById('ok').onclick = iniciar;
   });
 }
 
 // ---------- pantallas finales ----------
 
-function pantallaGuardadoSinSeñal() {
+function pantallaGuardadoSinSeñal(extra) {
   pintar(
-    aviso('alerta', '<strong>Guardado en el celular.</strong> No hay señal, así que se va a enviar solo cuando vuelva. No hace falta cargarlo de nuevo: podés cerrar la app.') +
-    `<button class="principal" onclick="location.reload()">Entendido</button>`
+    aviso('alerta', `<strong>Guardado en el celular.</strong> ${extra || ''} No hay señal, así que se va a enviar solo cuando vuelva. No hace falta cargarlo de nuevo.`) +
+    `<button class="principal" id="ok">Entendido</button>`
   );
+  document.getElementById('ok').onclick = iniciar;
 }
 
-/**
- * Hay una carga de este equipo esperando señal. No se ofrece cargar de nuevo:
- * el servidor todavía no sabe nada y se duplicaría el trabajo del operario.
- */
-function pantallaEnCola(item) {
-  const que = item.action === 'abrir' ? 'la apertura de la jornada' : 'el cierre de la jornada';
+/** Hay cargas de este equipo esperando señal. */
+function pantallaEnCola(items) {
+  const abiertaPend = items.some((i) => i.action === 'abrir');
+  const cierrePend = items.some((i) => i.action === 'cerrar');
+  const ab = abiertaLocal(equipo.codigo);
+  let acciones = '';
+  // Apertura en cola y sin cierre: el operario puede cerrar igual, sin señal.
+  if (abiertaPend && !cierrePend && ab) {
+    estado = estadoDesdeCache();
+    acciones = `<button class="principal" id="cerrar">Cerrar la jornada</button><div style="height:.5rem"></div>`;
+  }
   pintar(
-    aviso('alerta', `<strong>Falta enviar ${que}.</strong> Quedó guardada en el celular porque no había señal. Se manda sola cuando vuelva; no hace falta cargarla otra vez.`) +
-    `<button class="principal" id="reintentar">Intentar enviar ahora</button>
-     <div style="height:.5rem"></div>
-     <button class="secundaria" onclick="location.reload()">Actualizar</button>`
+    aviso('alerta', `<strong>Hay ${items.length} carga${items.length > 1 ? 's' : ''} de ${esc(equipo.codigo)} sin enviar.</strong> Quedaron guardadas porque no había señal. Se mandan solas cuando vuelva.`) +
+    acciones +
+    `<button class="secundaria" id="reintentar">Intentar enviar ahora</button>`
   );
+  const c = document.getElementById('cerrar');
+  if (c) c.onclick = () => pantallaCierre('');
   document.getElementById('reintentar').onclick = async (ev) => {
-    ev.target.disabled = true;
-    ev.target.textContent = 'Enviando…';
+    ev.target.disabled = true; ev.target.textContent = 'Enviando…';
     const ok = await API.sincronizar(() => {});
     if (ok) return iniciar();
-    ev.target.disabled = false;
-    ev.target.textContent = 'Intentar enviar ahora';
-    app.prepend(Object.assign(document.createElement('div'), {
-      className: 'aviso error',
-      textContent: 'Sigue sin haber señal. Probá de nuevo más tarde; no se pierde nada.'
-    }));
+    ev.target.disabled = false; ev.target.textContent = 'Intentar enviar ahora';
+    app.prepend(Object.assign(document.createElement('div'), { className: 'aviso error', textContent: 'Sigue sin haber señal. Probá más tarde; no se pierde nada.' }));
   };
-}
-
-/** No hay jornada abierta, pero hoy ya hubo al menos una cerrada. */
-function pantallaListo() {
-  const hoy = estado.jornadas_hoy || [];
-  const total = hoy.reduce((s, t) => s + Number(t.horas || 0), 0);
-  pintar(`
-    ${aviso('info', `${hoy.length === 1 ? 'Jornada cerrada' : hoy.length + ' jornadas cerradas'} hoy. ${total.toFixed(1)} horas en total.`)}
-    <div class="tarjeta filas">
-      ${hoy.map((t, i) => `
-        <div class="fila">
-          <span>Jornada ${i + 1} — ${t.operador || '—'}</span>
-          <span>${t.horom_ini} → ${t.horom_fin} · <strong>${t.horas} h</strong></span>
-        </div>`).join('')}
-    </div>
-    <button class="principal" id="otra">Abrir otra jornada</button>
-    <div style="height:1.2rem"></div>
-    <h2>Últimas jornadas</h2>
-    <div class="tarjeta filas">
-      ${estado.ultimas.map((u) => `
-        <div class="fila">
-          <span>${u.fecha}</span>
-          <span>${u.horas !== '' ? u.horas + ' h' : '<span class="chip alerta">sin cerrar</span>'}</span>
-        </div>`).join('') || '<div class="tenue">Todavía no hay jornadas anteriores.</div>'}
-    </div>
-  `);
-  document.getElementById('otra').onclick = aperturaIdentidad;
 }
 
 // ---------- ciclo ----------
 
-window.addEventListener('online', () => API.sincronizar(() => {}));
 iniciar();

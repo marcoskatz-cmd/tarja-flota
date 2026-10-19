@@ -28,8 +28,7 @@ async function llamar(action, datos = {}) {
     });
   } catch (e) {
     // Sin red, fetch tira un TypeError, no devuelve una respuesta fallada.
-    // Si esto no se traduce a SIN_SEÑAL, la cola offline nunca se activa y el
-    // operario pierde la carga justo cuando más falta le hace guardarla.
+    // Si esto no se traduce a SIN_SEÑAL, la cola offline nunca se activa.
     throw new Error(SIN_SEÑAL);
   }
   if (!r.ok) throw new Error(SIN_SEÑAL);
@@ -37,10 +36,13 @@ async function llamar(action, datos = {}) {
   try {
     j = await r.json();
   } catch (e) {
-    // Respuesta cortada a la mitad: tampoco es un rechazo del servidor.
     throw new Error(SIN_SEÑAL);
   }
-  if (!j.ok) throw new Error(j.error || 'Ocurrió un error inesperado.');
+  if (!j.ok) {
+    const err = new Error(j.error || 'Ocurrió un error inesperado.');
+    if (j.code) err.code = j.code;
+    throw err;
+  }
   return j.data;
 }
 
@@ -76,7 +78,7 @@ async function encolar(action, datos, equipo) {
 
 async function pendientesEnCola() {
   const items = await conStore('readonly', (s) => s.getAll());
-  return (items || []).sort((a, b) => a.ts - b.ts);
+  return ordenarCola_(items || []);
 }
 
 async function sacarDeCola(id) {
@@ -86,7 +88,6 @@ async function sacarDeCola(id) {
 // ---------- sincronización ----------
 
 const oyentes = [];
-/** Para que la pantalla pueda mostrar cuántas cargas quedan sin enviar. */
 function alCambiarCola(fn) { oyentes.push(fn); }
 async function avisar() {
   const p = await pendientesEnCola();
@@ -94,11 +95,13 @@ async function avisar() {
 }
 
 let sincronizando = false;
+// op_id de apertura → tarja_id, para que un cierre encolado encuentre su jornada.
+const aperturasEnviadas = {};
 
 /**
- * Envía lo que haya en cola, en orden. Si falla por red se corta y se reintenta
- * después; si el servidor lo rechaza por una regla, se descarta con aviso
- * (reintentarlo eternamente no lo va a arreglar).
+ * Envía lo que haya en cola, en orden (aperturas primero). Si falla por red se
+ * corta y se reintenta después; si el servidor lo rechaza por una regla, se
+ * descarta con aviso (reintentarlo eternamente no lo va a arreglar).
  */
 async function sincronizar(alAvisar) {
   if (sincronizando) return false;
@@ -106,10 +109,13 @@ async function sincronizar(alAvisar) {
   try {
     const items = await pendientesEnCola();
     for (const it of items) {
+      const res = resolverTarjaId_(it, aperturasEnviadas);
+      if (!res.ok) { alAvisar && alAvisar({ tipo: 'espera', item: it }); continue; }
       try {
-        await llamar(it.action, it.datos);
+        const data = await llamar(it.action, res.datos);
+        if (it.action === 'abrir' && data && data.tarja) aperturasEnviadas[it.datos.op_id] = data.tarja.id;
         await sacarDeCola(it.id);
-        alAvisar && alAvisar({ tipo: 'ok', item: it });
+        alAvisar && alAvisar({ tipo: 'ok', item: it, data });
       } catch (e) {
         if (e.message === SIN_SEÑAL) {
           alAvisar && alAvisar({ tipo: 'sin_señal' });
@@ -128,19 +134,18 @@ async function sincronizar(alAvisar) {
 
 /**
  * Manda ahora; si no hay señal, lo deja en la cola y avisa que quedó guardado.
- * El op_id se genera una sola vez y viaja con la operación: es lo que hace que
- * un reintento no duplique nada.
+ * El op_id se genera una sola vez y viaja con la operación.
  */
 async function enviar(action, datos, equipo) {
-  const conOp = { ...datos, op_id: crypto.randomUUID() };
+  const conOp = { ...datos, op_id: datos.op_id || crypto.randomUUID() };
   try {
     const data = await llamar(action, conOp);
-    return { encolado: false, data };
+    return { encolado: false, data, op_id: conOp.op_id };
   } catch (e) {
     if (e.message !== SIN_SEÑAL) throw e;
     await encolar(action, conOp, equipo);
     await avisar();
-    return { encolado: true };
+    return { encolado: true, op_id: conOp.op_id };
   }
 }
 
@@ -151,4 +156,4 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) sincronizar(() => {});
 });
 
-window.API = { llamar, enviar, sincronizar, pendientesEnCola, alCambiarCola, avisar };
+window.API = { llamar, enviar, sincronizar, pendientesEnCola, alCambiarCola, avisar, SIN_SEÑAL };

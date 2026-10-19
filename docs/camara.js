@@ -5,6 +5,9 @@
  * El sello (fecha, hora, equipo, coordenadas) se dibuja sobre la imagen antes
  * de subirla, así viaja adentro y no en metadata que se puede discutir o que
  * Drive puede recomprimir.
+ *
+ * Las coordenadas salen del GPS del celular en el momento de la foto, no del
+ * EXIF: la cámara del navegador suele no escribirlo.
  */
 
 const LADO_MAX = 1600;
@@ -12,16 +15,22 @@ const LADO_MAX = 1600;
 let stream = null;
 let coords = null;
 
-// Pedimos la ubicación una vez y la vamos refrescando en segundo plano.
 if (navigator.geolocation) {
   navigator.geolocation.watchPosition(
-    (p) => { coords = { lat: p.coords.latitude, lon: p.coords.longitude }; },
+    (p) => { coords = { lat: p.coords.latitude, lon: p.coords.longitude, precision: Math.round(p.coords.accuracy || 0) }; },
     () => { coords = null; },
     { enableHighAccuracy: true, maximumAge: 60000, timeout: 15000 }
   );
 }
 
+/** {lat, lon, precision} o null si el celular no dio GPS. Nunca bloquea la carga. */
 function ubicacion() { return coords; }
+
+/** Campos lat/lon/precision_gps para mandar al servidor. */
+function gpsParaEnvio() {
+  const u = ubicacion();
+  return u ? { lat: u.lat, lon: u.lon, precision_gps: u.precision } : { lat: '', lon: '', precision_gps: '' };
+}
 
 async function abrirCamara(video) {
   if (stream) cerrarCamara();
@@ -40,12 +49,6 @@ function cerrarCamara() {
   }
 }
 
-/**
- * Captura el cuadro actual, lo reescala, le quema el sello y devuelve un dataURL.
- * @param {HTMLVideoElement} video
- * @param {string} equipo
- * @param {string} fechaHoraServidor  texto ya formateado que vino del backend
- */
 function capturar(video, equipo, fechaHoraServidor) {
   const w0 = video.videoWidth;
   const h0 = video.videoHeight;
@@ -64,7 +67,7 @@ function capturar(video, equipo, fechaHoraServidor) {
   const u = ubicacion();
   const lineas = [
     `${equipo} — ${fechaHoraServidor}`,
-    u ? `${u.lat.toFixed(5)}, ${u.lon.toFixed(5)}` : 'Sin señal de GPS'
+    u ? `${u.lat.toFixed(5)}, ${u.lon.toFixed(5)} (±${u.precision} m)` : 'Sin señal de GPS'
   ];
 
   const alto = Math.max(14, Math.round(h * 0.032));
@@ -83,4 +86,4 @@ function capturar(video, equipo, fechaHoraServidor) {
   return c.toDataURL('image/jpeg', 0.72);
 }
 
-window.Camara = { abrirCamara, cerrarCamara, capturar, ubicacion };
+window.Camara = { abrirCamara, cerrarCamara, capturar, ubicacion, gpsParaEnvio };
