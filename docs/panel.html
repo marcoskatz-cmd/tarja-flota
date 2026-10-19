@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="es">
 <head>
+<script src="https://marcoskatz-cmd.github.io/app-ingeco/guard.js" data-modulo="TARJAS"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0f766e">
-<title>Panel — Tarja de equipos INGECO</title>
-<link rel="stylesheet" href="estilo.css?v=10">
+<title>Tarja de equipos — Panel</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="estilo.css?v=1">
 <style>
   nav.pestanas { display: flex; gap: .35rem; padding: .6rem 1rem 0; overflow-x: auto; background: var(--acento); }
   nav.pestanas button {
@@ -13,27 +15,52 @@
     padding: .55rem .9rem; border-radius: .6rem .6rem 0 0; font-size: .92rem; font-weight: 600;
   }
   nav.pestanas button.activa { background: var(--fondo); color: var(--acento); }
+  main { max-width: 1100px; }
   table { width: 100%; border-collapse: collapse; font-size: .92rem; }
-  th, td { text-align: left; padding: .55rem .4rem; border-bottom: 1px solid var(--borde); }
+  th, td { text-align: left; padding: .55rem .4rem; border-bottom: 1px solid var(--borde); vertical-align: top; }
   th { color: var(--tenue); font-weight: 600; font-size: .82rem; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .scroll-x { overflow-x: auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .7rem; }
+  .eq { border: 1px solid var(--borde); border-left-width: 6px; border-radius: .8rem; padding: .7rem .9rem; background: var(--tarjeta); }
+  .eq .codigo { font-size: 1.25rem; }
+  .eq.cerrada { border-left-color: var(--acento); }
+  .eq.abierta { border-left-color: #1e3a8a; }
+  .eq.sin_tarja { border-left-color: var(--alerta); }
+  .eq.sin_actividad { border-left-color: var(--borde); opacity: .75; }
+  .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0 .8rem; }
+  .chips button { border: 1px solid var(--borde); background: var(--tarjeta); border-radius: 999px; padding: .3rem .8rem; font-size: .85rem; }
+  .chips button.activa { background: var(--acento); color: #fff; border-color: var(--acento); }
+  #mapa { height: 70vh; min-height: 380px; border-radius: .9rem; border: 1px solid var(--borde); }
+  .leyenda-mapa span { display: inline-flex; align-items: center; gap: .3rem; margin-right: 1rem; font-size: .85rem; }
+  .punto { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+  .marcador-eq { background: transparent; border: 0; }
+  .marcador-eq .pin { display: flex; align-items: center; gap: .25rem; background: #fff; border-radius: 999px; padding: 2px 8px 2px 4px; font-weight: 800; font-size: .8rem; color: #14212c; box-shadow: 0 1px 4px rgba(0,0,0,.35); white-space: nowrap; }
+  .bloqueado { text-align: center; padding: 3rem 1rem; }
+  .bloqueado a { color: var(--acento); font-weight: 700; }
+  select, input[type=month], input[type=number], input[type=search] { width: auto; min-width: 10rem; }
+  .fila-form { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin-bottom: .8rem; }
+  .fila-form label { margin: 0 0 .25rem; }
 </style>
 </head>
 <body>
 <header>
   <div>
-    <div class="equipo">Panel de control</div>
-    <div class="fecha" id="hRol"></div>
+    <div class="equipo">Tarja de equipos</div>
+    <div class="fecha" id="hQuien"></div>
   </div>
-  <button id="btnSalir" hidden>Salir</button>
+  <button id="btnActualizar" hidden>Actualizar</button>
 </header>
 <nav class="pestanas" id="nav" hidden></nav>
 <main id="app"><div class="cargando">Cargando…</div></main>
 
 <div class="marca"><img class="ingeco" src="logos/ingeco.png" alt="INGECO" onerror="this.remove()"></div>
-<script>window.TARJA_API_URL = 'https://script.google.com/macros/s/AKfycbxwItT5p7VrxMVr-v0PCOJ0vb5Qm5p6GmZmdTPJAh3-43FiQkp84OQnT3nf6lJY8zIe2w/exec';</script>
-<script src="api.js?v=10"></script>
-<script src="panel.js?v=10"></script>
+<script>window.TARJA_API_URL = 'PENDIENTE_URL_EXEC';</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="reglas.js?v=1"></script>
+<script src="cola.js?v=1"></script>
+<script src="api.js?v=1"></script>
+<script src="panel-mapa.js?v=1"></script>
+<script src="panel.js?v=1"></script>
 </body>
 </html>
