@@ -45,6 +45,11 @@ function doGet(e) {
       case 'borrar_tarja': return json_({ ok: true, data: borrarTarja_(p.equipo, p.fecha, aplicar) });
       case 'recalcular_horometros': return json_({ ok: true, data: recalcularHorometros_(aplicar) });
       case 'diagnostico': return json_({ ok: true, data: diagnosticar_() });
+      case 'set_clave_avisos':
+        // Clave de App INGECO para mandar avisos (CLAVE_TARJAS). Nunca se devuelve.
+        if (!p.v) throw new Error('Falta la clave (v).');
+        setProp_('CLAVE_' + CFG.MODULO, String(p.v));
+        return json_({ ok: true, data: { guardada: true } });
     }
     return json_({ ok: false, error: 'Acción desconocida.' });
   } catch (err) {

@@ -102,3 +102,14 @@ module.exports = {
     assert.strictEqual(Number(ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03').horom_tarja), 4800);
   }
 };
+
+module.exports['set_clave_avisos guarda CLAVE_TARJAS solo con la clave de instalación'] = () => {
+  const ctx = armar();
+  ctx.setProp_('BOOTSTRAP_KEY', 'k');
+  assert.strictEqual(get(ctx, { action: 'set_clave_avisos', key: 'mal', v: 'abc' }).ok, false);
+  assert.strictEqual(ctx.prop_('CLAVE_TARJAS'), null);
+  const r = get(ctx, { action: 'set_clave_avisos', key: 'k', v: 'abc' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(ctx.prop_('CLAVE_TARJAS'), 'abc');
+  assert.strictEqual(JSON.stringify(r).indexOf('abc'), -1, 'la clave no vuelve en la respuesta');
+};
