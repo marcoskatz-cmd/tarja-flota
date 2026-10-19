@@ -1,295 +1,333 @@
 /**
- * Ciclo de vida de la tarja: apertura, checklist, cierre y firma.
+ * Ciclo de vida de la tarja: apertura (con checklist y firma), cierre, cierre
+ * por un tercero.
  *
  * Reglas duras que se aplican acá y en ningún otro lado:
- *  - Se pueden abrir varias jornadas por día, pero NUNCA dos abiertas a la vez
- *    en el mismo equipo: hay que cerrar la anterior antes de empezar otra.
- *  - Cada envío trae su op_id. Si el celular reintenta porque se cortó la señal
- *    después de guardar, se devuelve la tarja que ya se creó en vez de duplicarla.
- *    Antes esto lo cubría la regla de "una por día", que ya no existe.
- *  - Delta de horómetro calculado en el servidor. Se rechazan negativos y > 14 h.
+ *  - Varias jornadas por día, pero NUNCA dos abiertas a la vez en el mismo
+ *    equipo. La hoja ABIERTAS es el índice: una fila por jornada abierta, así
+ *    la app del operario no lee el histórico del año.
+ *  - Cada envío trae su op_id. Un reintento devuelve lo ya guardado.
+ *  - Delta de horómetro calculado en el servidor. Negativos y > MAX rechazados.
  *  - Fecha y hora del servidor, nunca del dispositivo.
  *  - Tarja cerrada = congelada. Solo se anula desde el panel.
- *
- * El operador firma AL ABRIR la jornada, no al cerrarla: así queda asentado
- * quién se hizo cargo de la máquina desde el primer minuto, y el cierre se
- * reduce a la foto del horómetro final.
+ *  - El checklist es pre-operacional: va en la apertura, una vez por equipo y día.
+ *  - Si el horómetro tipeado está lejos del último conocido, probablemente el
+ *    operario eligió otro equipo: se le pregunta antes de aceptar la corrección.
  */
 
-function equipoPorNombre_(nombre) {
-  var e = leer_('EQUIPOS').filter(function (r) {
-    return String(r.equipo).toUpperCase() === String(nombre).toUpperCase();
-  })[0];
-  if (!e) throw new Error('El equipo "' + nombre + '" no está dado de alta.');
+function equipoPorCodigo_(codigo) {
+  var c = String(codigo || '').toUpperCase().trim();
+  var e = leer_('EQUIPOS').filter(function (r) { return String(r.codigo).toUpperCase() === c; })[0];
+  if (!e) throw new Error('El equipo ' + codigo + ' no está en la lista.');
   return e;
 }
 
-/** Todas las jornadas del día, en orden de apertura. */
-function tarjasDelDia_(equipo, fecha) {
-  return leer_('TARJAS').filter(function (t) {
-    return String(t.equipo).toUpperCase() === String(equipo).toUpperCase() &&
-           String(t.fecha) === fecha &&
-           String(t.estado) !== 'anulada';
-  }).sort(function (a, b) {
-    return String(a.ts_apertura) < String(b.ts_apertura) ? -1 : 1;
-  });
+/** Fila de ABIERTAS del equipo, o null. */
+function abiertaDe_(codigo) {
+  var c = String(codigo).toUpperCase();
+  return leer_('ABIERTAS').filter(function (a) { return String(a.equipo).toUpperCase() === c; })[0] || null;
 }
 
-/** La jornada abierta de hoy, si hay. Solo puede haber una. */
-function tarjaAbierta_(equipo, fecha) {
-  return tarjasDelDia_(equipo, fecha).filter(function (t) {
-    return String(t.estado) === 'abierta';
-  })[0] || null;
+/** La tarja (fila de TARJAS_<año>) que referencia una fila de ABIERTAS. */
+function tarjaDeAbierta_(ab) {
+  return buscarPorId_('TARJAS_' + ab.anio, ab.tarja_id);
+}
+
+/** Busca una tarja por id en el año actual y el anterior (cambio de año). */
+function tarjaPorId_(id) {
+  var anio = Number(hoyStr_().slice(0, 4));
+  for (var a = anio; a >= anio - 1; a--) {
+    if (!ss_().getSheetByName('TARJAS_' + a)) continue;
+    var t = buscarPorId_('TARJAS_' + a, id);
+    if (t) { t._hoja = 'TARJAS_' + a; return t; }
+  }
+  return null;
 }
 
 function tarjaPorOpId_(opId) {
   if (!opId) return null;
-  return leer_('TARJAS').filter(function (t) {
-    return String(t.op_id) === String(opId);
-  })[0] || null;
+  var anio = Number(hoyStr_().slice(0, 4));
+  for (var a = anio; a >= anio - 1; a--) {
+    if (!ss_().getSheetByName('TARJAS_' + a)) continue;
+    var t = leer_('TARJAS_' + a).filter(function (x) { return String(x.op_id) === String(opId); })[0];
+    if (t) { t._hoja = 'TARJAS_' + a; return t; }
+  }
+  return null;
 }
 
-/**
- * Qué le toca al operador hoy. Es lo primero que pide la PWA al abrir.
- */
+/** Tarjas de hoy del equipo (no anuladas). */
+function tarjasDelDia_(codigo, fecha) {
+  var c = String(codigo).toUpperCase();
+  return leer_(nombreHojaTarjas_(fecha)).filter(function (t) {
+    return String(t.equipo).toUpperCase() === c && String(t.fecha) === fecha && String(t.estado) !== 'anulada';
+  });
+}
+
+function itemsDe_(tipoRodado) {
+  var tipo = String(tipoRodado || '').toLowerCase();
+  return activos_('CHECKLIST_ITEMS')
+    .filter(function (i) { var t = String(i.tipo || '').toLowerCase(); return !t || t === tipo; })
+    .sort(function (a, b) { return Number(a.orden) - Number(b.orden); })
+    .map(function (i) { return { orden: Number(i.orden), tipo: String(i.tipo || ''), item: String(i.item) }; });
+}
+
+function horasEntre_(tsIni, tsFin) {
+  var a = new Date(String(tsIni).replace(' ', 'T'));
+  var b = new Date(String(tsFin).replace(' ', 'T'));
+  return Math.round(((b - a) / 3600000) * 10) / 10;
+}
+
+/** Lo que le toca al operario con este equipo. Primera llamada de la PWA. */
 function estadoDelDia_(p) {
-  var equipo = equipoPorNombre_(p.equipo);
+  var equipo = equipoPorCodigo_(p.equipo);
   var fecha = hoyStr_();
-  var delDia = tarjasDelDia_(equipo.equipo, fecha);
-  var abierta = tarjaAbierta_(equipo.equipo, fecha);
+  var ab = abiertaDe_(equipo.codigo);
+  var abierta = null;
+  if (ab) {
+    var t = tarjaDeAbierta_(ab);
+    abierta = t ? {
+      tarja_id: t.id, operador: t.operador, legajo: t.legajo, fecha: String(t.fecha),
+      ts_apertura: t.ts_apertura, horom_ini: t.horom_ini, horas_abierta: horasEntre_(t.ts_apertura, tsStr_())
+    } : { tarja_id: ab.tarja_id, operador: ab.operador, legajo: ab.legajo, ts_apertura: ab.ts_apertura, horom_ini: '' };
+  }
+  var checklistHecho = tarjasDelDia_(equipo.codigo, fecha).some(function (t) { return String(t.checklist_hecho) === 'SI'; });
   return {
     fecha: fecha,
-    equipo: equipo.equipo,
-    tipo: equipo.tipo,
-    tarja: abierta ? tarjaPublica_(abierta) : null,
-    jornadas_hoy: delDia.map(tarjaPublica_),
-    // Con una jornada abierta hay que cerrarla; si no, se puede abrir otra,
-    // haya o no jornadas cerradas hoy.
-    paso: abierta ? 'cierre' : (delDia.length ? 'listo' : 'apertura'),
-    horom_sugerido: Number(equipo.horom_actual || 0),
-    items: itemsDe_(equipo.equipo, 'diaria'),
-    operadores: operadoresDe_(equipo.equipo),
-    ultimas: ultimasTarjas_(equipo.equipo, 5)
+    hora: tsStr_().slice(11, 16),
+    equipo: equipo.codigo,
+    descripcion: equipo.descripcion,
+    tipo_rodado: equipo.tipo_rodado,
+    abierta: abierta,
+    sugerido: Number(equipo.horom_tarja || 0),
+    origen_horom: String(equipo.origen_horom || ''),
+    checklist_pendiente: !checklistHecho,
+    items: itemsDe_(equipo.tipo_rodado),
+    motivos_cierre_tercero: MOTIVO_CIERRE_TERCERO
   };
-}
-
-function itemsDe_(equipo, frecuencia) {
-  return activos_('CHECKLIST_ITEMS')
-    .filter(function (i) {
-      return String(i.frecuencia) === frecuencia &&
-        (!String(i.equipo).trim() ||
-          String(i.equipo).toUpperCase() === String(equipo).toUpperCase());
-    })
-    .sort(function (a, b) { return Number(a.orden) - Number(b.orden); })
-    .map(function (i) { return { orden: Number(i.orden), item: String(i.item) }; });
-}
-
-/**
- * El nombre del operador es texto libre (rota personal de terceros), pero la app
- * ofrece como sugerencia los que ya firmaron en ese equipo. Se aprende sola.
- */
-function operadoresDe_(equipo) {
-  return activos_('OPERADORES')
-    .filter(function (o) {
-      return !String(o.equipo).trim() ||
-        String(o.equipo).toUpperCase() === String(equipo).toUpperCase();
-    })
-    .map(function (o) { return String(o.nombre); });
-}
-
-function recordarOperador_(nombre, equipo) {
-  nombre = String(nombre || '').trim();
-  if (!nombre) return;
-  var ya = leer_('OPERADORES').some(function (o) {
-    return String(o.nombre).toUpperCase() === nombre.toUpperCase() &&
-           String(o.equipo).toUpperCase() === String(equipo).toUpperCase();
-  });
-  if (!ya) agregar_('OPERADORES', { nombre: nombre, equipo: equipo, activo: 'SI' });
 }
 
 function tarjaPublica_(t) {
   return {
     id: t.id, equipo: t.equipo, fecha: String(t.fecha), estado: t.estado,
-    operador: t.operador, horom_ini: t.horom_ini, horom_fin: t.horom_fin,
-    horas: t.horas, excepcion: t.excepcion,
-    foto_monitor: t.foto_monitor, foto_horom_ini: t.foto_horom_ini,
-    foto_horom_fin: t.foto_horom_fin
+    legajo: t.legajo, operador: t.operador, operador_manual: t.operador_manual, obra: t.obra,
+    horom_ini: t.horom_ini, horom_fin: t.horom_fin, horas: t.horas, excepcion: t.excepcion,
+    checklist_hecho: t.checklist_hecho,
+    foto_horom_ini: t.foto_horom_ini, foto_horom_fin: t.foto_horom_fin,
+    lat: t.lat, lon: t.lon, lat_fin: t.lat_fin, lon_fin: t.lon_fin, precision_gps: t.precision_gps,
+    cierre_tercero: t.cierre_tercero, legajo_cierre: t.legajo_cierre, motivo_cierre_tercero: t.motivo_cierre_tercero,
+    ts_apertura: t.ts_apertura, ts_cierre: t.ts_cierre
   };
 }
 
-function ultimasTarjas_(equipo, n) {
-  return leer_('TARJAS')
-    .filter(function (t) { return String(t.equipo).toUpperCase() === String(equipo).toUpperCase(); })
-    .sort(function (a, b) { return String(b.fecha) < String(a.fecha) ? -1 : 1; })
-    .slice(0, n)
-    .map(tarjaPublica_);
+function gpsValido_(lat, lon) {
+  var a = Number(lat), b = Number(lon);
+  return lat !== '' && lat != null && lon !== '' && lon != null && isFinite(a) && isFinite(b) && (a !== 0 || b !== 0);
+}
+
+/** Actualiza la última posición conocida del equipo solo si llegó GPS. */
+function actualizarPosicion_(equipo, lat, lon, cambios) {
+  cambios = cambios || {};
+  if (gpsValido_(lat, lon)) { cambios.lat = Number(lat); cambios.lon = Number(lon); cambios.ts_pos = tsStr_(); }
+  if (Object.keys(cambios).length) actualizar_('EQUIPOS', equipo._fila, cambios);
+}
+
+function errorConCodigo_(code, msg) {
+  var e = new Error(msg);
+  e.code = code;
+  return e;
 }
 
 // ---------- apertura ----------
 
-/**
- * Abre una jornada: foto de monitor, foto de horómetro y checklist completo,
- * todo en una sola operación atómica.
- */
 function abrirTarja_(p) {
-  var equipo = equipoPorNombre_(p.equipo);
+  var equipo = equipoPorCodigo_(p.equipo);
   var fecha = hoyStr_();
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    // Reintento del mismo envío: devolver lo que ya se guardó.
     var mismaOp = tarjaPorOpId_(p.op_id);
-    if (mismaOp) {
-      return { ya_existia: true, tarja: tarjaPublica_(mismaOp) };
-    }
-    var abierta = tarjaAbierta_(equipo.equipo, fecha);
-    if (abierta) {
-      throw new Error('Ya hay una jornada abierta en ' + equipo.equipo +
-        '. Cerrala antes de empezar otra.');
+    if (mismaOp) return { ya_existia: true, tarja: tarjaPublica_(mismaOp) };
+
+    var ab = abiertaDe_(equipo.codigo);
+    if (ab) {
+      throw new Error('Ya hay una jornada abierta en ' + equipo.codigo + ' (' + ab.operador +
+        '). Hay que cerrarla antes de empezar otra.');
     }
 
     var operador = String(p.operador || '').trim();
-    if (operador.length < 3) throw new Error('Falta el nombre del operador.');
-    if (!p.firma) throw new Error('Falta la firma del operador.');
-    if (!p.foto_monitor) throw new Error('Falta la foto del monitor de cabina.');
+    var legajo = String(p.legajo || '').trim();
+    var manual = !!p.operador_manual || !legajo;
+    if (operador.length < 3) throw new Error('Falta el nombre del operario.');
+    if (!p.firma) throw new Error('Falta la firma del operario.');
     if (!p.foto_horometro) throw new Error('Falta la foto del horómetro.');
 
-    var sugerido = Number(equipo.horom_actual || 0);
+    var sugerido = Number(equipo.horom_tarja || 0);
+    var origen = String(equipo.origen_horom || '');
     var horomIni = Number(p.horom_ini);
-    if (!isFinite(horomIni) || horomIni < 0) {
-      throw new Error('El valor del horómetro no es un número válido.');
-    }
+    if (!isFinite(horomIni) || horomIni < 0) throw new Error('El valor del horómetro no es un número válido.');
     var corregido = Math.abs(horomIni - sugerido) > 0.001;
+    if (corregido && diferenciaSospechosa_(horomIni, sugerido, origen, configNum_('UMBRAL_CORRECCION_HS')) && !p.confirmo_equipo) {
+      throw errorConCodigo_('CONFIRMAR_EQUIPO',
+        'El horómetro que tipeaste (' + horomIni + ') está a ' + Math.abs(horomIni - sugerido).toFixed(0) +
+        ' hs del último registrado (' + sugerido + '). ¿Seguro que estás en ' + equipo.codigo + '?');
+    }
     if (corregido && !String(p.motivo_correccion || '').trim()) {
       throw new Error('Para corregir el horómetro hay que indicar el motivo.');
     }
 
-    var items = itemsDe_(equipo.equipo, 'diaria');
+    var yaHizoChecklist = tarjasDelDia_(equipo.codigo, fecha).some(function (t) { return String(t.checklist_hecho) === 'SI'; });
+    var items = itemsDe_(equipo.tipo_rodado);
     var respuestas = p.checklist || [];
-    if (respuestas.length !== items.length) {
+    var conChecklist = !yaHizoChecklist;
+    if (conChecklist && respuestas.length !== items.length) {
       throw new Error('El checklist está incompleto: faltan ítems por responder.');
     }
 
     var id = uuid_();
-    var urlMonitor = guardarFoto_(p.foto_monitor, equipo.equipo, fecha, 'monitor');
-    var urlHorom = guardarFoto_(p.foto_horometro, equipo.equipo, fecha, 'horometro-ini');
-    var urlFirma = guardarFoto_(p.firma, equipo.equipo, fecha, 'firma');
+    var ts = tsStr_();
+    var urlHorom = guardarFoto_(p.foto_horometro, equipo.codigo, fecha, 'horometro-ini');
+    var urlFirma = guardarFoto_(p.firma, equipo.codigo, fecha, 'firma');
+    var conGps = gpsValido_(p.lat, p.lon);
 
-    agregar_('TARJAS', {
-      id: id, equipo: equipo.equipo, fecha: fecha, estado: 'abierta', operador: operador,
+    var hoja = nombreHojaTarjas_(fecha);
+    hojaTarjas_(Number(fecha.slice(0, 4)));
+    agregar_(hoja, {
+      id: id, equipo: equipo.codigo, fecha: fecha, estado: 'abierta',
+      legajo: legajo, operador: operador, operador_manual: manual ? 'SI' : 'NO', obra: equipo.lugar || '',
       horom_ini: horomIni, horom_fin: '', horas: '',
-      foto_monitor: urlMonitor, foto_horom_ini: urlHorom, foto_horom_fin: '',
+      foto_horom_ini: urlHorom, foto_horom_fin: '',
       horom_ini_sugerido: sugerido,
       correccion_horom: corregido ? 'SI' : 'NO',
       motivo_correccion: corregido ? String(p.motivo_correccion).trim() : '',
       excepcion: corregido ? 'SI' : 'NO',
-      firma: urlFirma, lat: p.lat || '', lon: p.lon || '',
-      ts_apertura: tsStr_(), ts_cierre: '', ts_firma: tsStr_(),
+      checklist_hecho: conChecklist ? 'SI' : 'NO',
+      firma: urlFirma,
+      lat: conGps ? Number(p.lat) : '', lon: conGps ? Number(p.lon) : '', lat_fin: '', lon_fin: '',
+      precision_gps: conGps ? String(p.precision_gps || '') : 'sin GPS',
+      cierre_tercero: 'NO', legajo_cierre: '', motivo_cierre_tercero: '',
+      ts_apertura: ts, ts_cierre: '', ts_firma: ts,
       anulada_ts: '', anulada_por: '', anulada_motivo: '',
       op_id: String(p.op_id || '')
     });
-    try { notificarAppIngeco_('TARJA', { destinatarios: [{ con_modulo: 'TARJA' }], tipo: 'aviso_general', prioridad: 'normal', titulo: 'Tarja abierta: ' + equipo.equipo, cuerpo: operador + ' · horómetro ' + horomIni + ' · ' + fecha, url_destino: 'https://marcoskatz-cmd.github.io/tarja-corrientes/', clave_unica: 'tarja-abierta-' + id }); } catch (eAv) { }
+    agregar_('ABIERTAS', { tarja_id: id, equipo: equipo.codigo, legajo: legajo, operador: operador, ts_apertura: ts, anio: fecha.slice(0, 4) });
 
-    respuestas.forEach(function (r) {
-      var item = items.filter(function (i) { return i.orden === Number(r.orden); })[0];
-      if (!item) throw new Error('Llegó una respuesta para un ítem que no existe.');
-      var estado = String(r.estado).toUpperCase();
-      if (estado !== 'OK' && estado !== 'PROBLEMA') {
-        throw new Error('El ítem ' + r.orden + ' quedó sin responder.');
-      }
-      var urlFoto = '';
-      if (estado === 'PROBLEMA') {
-        if (!r.foto) throw new Error('El ítem "' + item.item + '" está marcado como problema y necesita foto.');
-        if (!String(r.comentario || '').trim()) {
-          throw new Error('El ítem "' + item.item + '" está marcado como problema y necesita un comentario.');
-        }
-        urlFoto = guardarFoto_(r.foto, equipo.equipo, fecha, 'item-' + item.orden);
-      }
-      var respId = uuid_();
-      agregar_('CHECKLIST_RESP', {
-        id: respId, tarja_id: id, equipo: equipo.equipo, fecha: fecha,
-        orden: item.orden, item: item.item, estado: estado,
-        foto: urlFoto, comentario: String(r.comentario || '').trim(), ts: tsStr_()
-      });
-      if (estado === 'PROBLEMA') {
-        agregar_('PENDIENTES', {
-          id: uuid_(), tarja_id: id, equipo: equipo.equipo, fecha_apertura: fecha,
-          orden: item.orden, item: item.item,
-          comentario: String(r.comentario || '').trim(), foto: urlFoto,
-          estado: 'abierto', fecha_cierre: '', motivo_cierre: '', cerrado_por: ''
-        });
-        try { notificarAppIngeco_('TARJA', { destinatarios: [{ con_modulo: 'TARJA' }, { area: 'TALLER' }, { admin: true }], tipo: 'aviso_general', prioridad: 'critica', titulo: 'Problema en ' + equipo.equipo + ': ' + item.item, cuerpo: (String(r.comentario || '').trim() || 'Sin comentario') + ' · ' + operador + ' · ' + fecha, url_destino: urlFoto || 'https://marcoskatz-cmd.github.io/tarja-corrientes/', clave_unica: 'pendiente-' + respId }); } catch (eAv) { }
-      }
-    });
+    if (conChecklist) guardarChecklist_(id, equipo, fecha, operador, items, respuestas);
 
-    recordarOperador_(operador, equipo.equipo);
+    if (manual) registrarOperadorManual_(operador);
+
+    actualizarPosicion_(equipo, p.lat, p.lon, { ultimo_operador: operador, ultima_tarja: fecha });
 
     if (corregido) {
-      log_('operador', 'CORRECCION_HOROMETRO',
-        equipo.equipo + ' ' + fecha + ': ' + sugerido + ' -> ' + horomIni,
+      log_(operador, 'CORRECCION_HOROMETRO', equipo.codigo + ' ' + fecha + ': ' + sugerido + ' -> ' + horomIni,
         String(p.motivo_correccion).trim());
     }
 
     return {
       ya_existia: false,
-      tarja: tarjaPublica_(buscarPorId_('TARJAS', id)),
-      jornada: tarjasDelDia_(equipo.equipo, fecha).length
+      tarja: tarjaPublica_(buscarPorId_(hoja, id)),
+      jornada: tarjasDelDia_(equipo.codigo, fecha).length
     };
   } finally {
     lock.releaseLock();
   }
 }
 
-// ---------- cierre y firma ----------
+function guardarChecklist_(tarjaId, equipo, fecha, operador, items, respuestas) {
+  respuestas.forEach(function (r) {
+    var item = items.filter(function (i) { return i.orden === Number(r.orden); })[0];
+    if (!item) throw new Error('Llegó una respuesta para un ítem que no existe.');
+    var estado = String(r.estado).toUpperCase();
+    if (estado !== 'OK' && estado !== 'PROBLEMA') throw new Error('El ítem ' + r.orden + ' quedó sin responder.');
+    var urlFoto = '';
+    if (estado === 'PROBLEMA') {
+      if (!r.foto) throw new Error('El ítem "' + item.item + '" está marcado como falla y necesita foto.');
+      if (!String(r.comentario || '').trim()) throw new Error('El ítem "' + item.item + '" está marcado como falla y necesita un comentario.');
+      urlFoto = guardarFoto_(r.foto, equipo.codigo, fecha, 'item-' + item.orden);
+    }
+    var respId = uuid_();
+    agregar_('CHECKLIST_RESP', {
+      id: respId, tarja_id: tarjaId, equipo: equipo.codigo, fecha: fecha,
+      orden: item.orden, item: item.item, estado: estado,
+      foto: urlFoto, comentario: String(r.comentario || '').trim(), ts: tsStr_()
+    });
+    if (estado === 'PROBLEMA') {
+      agregar_('PENDIENTES', {
+        id: uuid_(), tarja_id: tarjaId, equipo: equipo.codigo, fecha_apertura: fecha,
+        orden: item.orden, item: item.item,
+        comentario: String(r.comentario || '').trim(), foto: urlFoto,
+        estado: 'abierto', fecha_cierre: '', motivo_cierre: '', cerrado_por: ''
+      });
+      try {
+        notificarAppIngeco_(CFG.MODULO, {
+          destinatarios: [{ con_modulo: CFG.MODULO }],
+          tipo: 'aviso_general', prioridad: 'critica',
+          titulo: 'Falla en ' + equipo.codigo + ': ' + item.item,
+          cuerpo: (String(r.comentario || '').trim() || 'Sin comentario') + ' · ' + operador + ' · ' + fecha,
+          url_destino: urlFoto || CFG.URL_PANEL,
+          clave_unica: 'pendiente-' + respId
+        });
+      } catch (eAv) { }
+    }
+  });
+}
+
+function registrarOperadorManual_(nombre) {
+  var ya = leer_('OPERADORES_MANUALES').some(function (o) { return normalizarTexto_(o.nombre) === normalizarTexto_(nombre); });
+  if (!ya) agregar_('OPERADORES_MANUALES', { nombre: nombre, legajo_vinculado: '', ts: tsStr_() });
+}
+
+// ---------- cierre ----------
 
 /**
- * Cierra la jornada. Solo horómetro final: la firma y el operador ya quedaron
- * asentados en la apertura. Una vez cerrada, la tarja queda congelada.
+ * Cierra la jornada con la foto del horómetro final. Si quien cierra no es
+ * quien abrió, exige un motivo y la tarja queda marcada como cierre de tercero.
  */
 function cerrarTarja_(p) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    var t = buscarPorId_('TARJAS', p.tarja_id);
-    if (!t) throw new Error('No se encontró la tarja.');
-    if (String(t.estado) === 'anulada') throw new Error('Esta tarja fue anulada desde el panel.');
-    if (String(t.estado) !== 'abierta') {
-      return { ya_estaba_cerrada: true, tarja: tarjaPublica_(t) };
-    }
+    var t = tarjaPorId_(p.tarja_id);
+    if (!t) throw new Error('No se encontró la jornada. Puede que haya sido anulada desde el panel.');
+    if (String(t.estado) === 'anulada') throw new Error('Esta jornada fue anulada desde el panel.');
+    if (String(t.estado) !== 'abierta') return { ya_estaba_cerrada: true, tarja: tarjaPublica_(t) };
     if (!p.foto_horometro) throw new Error('Falta la foto del horómetro final.');
 
-    var horomFin = Number(p.horom_fin);
-    var horomIni = Number(t.horom_ini);
-    if (!isFinite(horomFin)) throw new Error('El horómetro final no es un número válido.');
-    var horas = horomFin - horomIni;
-    if (horas < 0) {
-      throw new Error('El horómetro final (' + horomFin + ') es menor que el de apertura (' +
-        horomIni + '). Revisá el valor.');
-    }
-    if (horas > CFG.MAX_HORAS_JORNADA) {
-      throw new Error('La diferencia da ' + horas.toFixed(1) + ' h, más de las ' +
-        CFG.MAX_HORAS_JORNADA + ' h permitidas en una jornada. Revisá el valor.');
+    var calc = calcularHoras_(t.horom_ini, p.horom_fin, configNum_('MAX_HORAS_JORNADA') || CFG.MAX_HORAS_JORNADA);
+    if (!calc.ok) throw new Error(calc.error);
+
+    var legajoCierre = String(p.legajo || '').trim();
+    var operadorCierre = String(p.operador || '').trim();
+    var mismo = legajoCierre && String(t.legajo) ? legajoCierre === String(t.legajo)
+      : normalizarTexto_(operadorCierre) === normalizarTexto_(t.operador);
+    var motivo = String(p.motivo_cierre_tercero || '').trim();
+    if (!mismo && !motivo) {
+      throw new Error('Esta jornada la abrió ' + t.operador + '. Para cerrarla vos hay que indicar el motivo.');
     }
 
     var fecha = String(t.fecha);
     var urlHorom = guardarFoto_(p.foto_horometro, t.equipo, fecha, 'horometro-fin');
+    var conGps = gpsValido_(p.lat, p.lon);
+    var horomFin = Number(p.horom_fin);
 
-    actualizar_('TARJAS', t._fila, {
-      estado: 'cerrada',
-      horom_fin: horomFin, horas: horas,
-      foto_horom_fin: urlHorom,
-      ts_cierre: tsStr_()
+    actualizar_(t._hoja, t._fila, {
+      estado: 'cerrada', horom_fin: horomFin, horas: calc.horas,
+      foto_horom_fin: urlHorom, ts_cierre: tsStr_(),
+      lat_fin: conGps ? Number(p.lat) : '', lon_fin: conGps ? Number(p.lon) : '',
+      cierre_tercero: mismo ? 'NO' : 'SI',
+      legajo_cierre: mismo ? '' : (legajoCierre || operadorCierre),
+      motivo_cierre_tercero: mismo ? '' : motivo
     });
-    try { notificarAppIngeco_('TARJA', { destinatarios: [{ con_modulo: 'TARJA' }], tipo: 'aviso_general', prioridad: 'normal', titulo: 'Tarja cerrada: ' + t.equipo + ' · ' + Number(horas).toFixed(1) + ' h', cuerpo: 'Horómetro ' + t.horom_ini + ' → ' + horomFin + ' · ' + fecha, url_destino: 'https://marcoskatz-cmd.github.io/tarja-corrientes/', clave_unica: 'tarja-cerrada-' + t.id }); } catch (eAv) { }
 
-    var eq = equipoPorNombre_(t.equipo);
-    actualizar_('EQUIPOS', eq._fila, { horom_actual: horomFin });
+    leer_('ABIERTAS').filter(function (a) { return String(a.tarja_id) === String(t.id); })
+      .sort(function (a, b) { return b._fila - a._fila; })
+      .forEach(function (a) { hoja_('ABIERTAS').deleteRow(a._fila); });
 
-    return {
-      ya_estaba_cerrada: false,
-      tarja: tarjaPublica_(buscarPorId_('TARJAS', t.id)),
-      horas: horas
-    };
+    var equipo = equipoPorCodigo_(t.equipo);
+    actualizarPosicion_(equipo, p.lat, p.lon, { horom_tarja: horomFin, origen_horom: 'TARJA' });
+
+    if (!mismo) log_(operadorCierre || legajoCierre, 'CIERRE_TERCERO', t.equipo + ' ' + fecha + ' abierta por ' + t.operador, motivo);
+
+    return { ya_estaba_cerrada: false, tarja: tarjaPublica_(buscarPorId_(t._hoja, t.id)), horas: calc.horas };
   } finally {
     lock.releaseLock();
   }
