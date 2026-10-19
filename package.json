@@ -1,0 +1,10 @@
+{
+  "name": "tarja-flota",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Tarja diaria de la flota pesada de INGECO",
+  "scripts": {
+    "test": "node test/run.js",
+    "reglas": "node scripts/copiar-reglas.js"
+  }
+}
