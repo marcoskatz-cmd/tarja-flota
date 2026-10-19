@@ -15,19 +15,19 @@ function setupCompleto_() {
   var creado = { planilla: false, carpeta: false, hojas: [] };
 
   if (!prop_('SHEET_ID')) {
-    var nueva = SpreadsheetApp.create('TARJA CORRIENTES — Base de datos');
+    var nueva = SpreadsheetApp.create('TARJA FLOTA — Base de datos');
     setProp_('SHEET_ID', nueva.getId());
     // La hoja por defecto sobra: las nuestras se crean abajo.
     creado.planilla = true;
   }
   if (!prop_('DRIVE_FOLDER_ID')) {
-    var f = DriveApp.createFolder('TARJA CORRIENTES — Fotos');
+    var f = DriveApp.createFolder('TARJA FLOTA — Fotos');
     setProp_('DRIVE_FOLDER_ID', f.getId());
     creado.carpeta = true;
   }
 
   var ss = ss_();
-  Object.keys(HOJAS).forEach(function (nombre) {
+  hojasFijas_().forEach(function (nombre) {
     var sh = ss.getSheetByName(nombre);
     if (!sh) {
       sh = ss.insertSheet(nombre);
@@ -54,9 +54,12 @@ function setupCompleto_() {
     }
   });
 
+  // La hoja de tarjas del año en curso. Las de otros años se crean a demanda.
+  hojaTarjas_(Number(hoyStr_().slice(0, 4)));
+
   // Sacar la "Hoja 1" que Sheets crea sola, solo si quedó vacía y hay otras.
   var sobrante = ss.getSheets().filter(function (s) {
-    return !HOJAS[s.getName()];
+    return !HOJAS[s.getName()] && !/^TARJAS_\d{4}$/.test(s.getName());
   });
   if (sobrante.length && ss.getSheets().length > sobrante.length) {
     sobrante.forEach(function (s) {
@@ -86,13 +89,15 @@ function setupCompleto_() {
 function diagnosticar_() {
   var ss = ss_();
   var problemas = [];
-  Object.keys(HOJAS).forEach(function (nombre) {
+  var nombres = hojasFijas_().concat(ss.getSheets().map(function (s) { return s.getName(); })
+    .filter(function (n) { return /^TARJAS_\d{4}$/.test(n); }));
+  nombres.forEach(function (nombre) {
     var sh = ss.getSheetByName(nombre);
     if (!sh) {
       problemas.push({ hoja: nombre, tipo: 'FALTA_HOJA', detalle: 'La hoja no existe' });
       return;
     }
-    var esperado = HOJAS[nombre];
+    var esperado = colsDe_(nombre);
     var real = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), esperado.length))
       .getValues()[0].map(function (v) { return String(v || '').trim(); });
     esperado.forEach(function (col, i) {
@@ -106,7 +111,51 @@ function diagnosticar_() {
       }
     });
   });
+  // Fuentes externas (LISTA DE EQUIPOS de INGECOV, PERSONAL de Ropa): el sync
+  // deja el detalle en Script Properties cuando una columna falta.
+  [['DIAG_EQUIPOS', 'FUENTE_EQUIPOS'], ['DIAG_PERSONAL', 'FUENTE_PERSONAL']].forEach(function (par) {
+    var d = prop_(par[0]);
+    if (d) problemas.push({ hoja: par[1], tipo: 'FUENTE', detalle: d });
+  });
   return problemas;
+}
+
+// ---------- hojas por año ----------
+
+/** Hojas con nombre fijo (todas menos la plantilla TARJAS). */
+function hojasFijas_() {
+  return Object.keys(HOJAS).filter(function (n) { return n !== 'TARJAS'; });
+}
+
+/** Columnas de una hoja, resolviendo TARJAS_<año> a la plantilla. */
+function colsDe_(nombre) {
+  if (/^TARJAS_\d{4}$/.test(nombre)) return HOJAS.TARJAS;
+  var c = HOJAS[nombre];
+  if (!c) throw new Error('Hoja desconocida: ' + nombre);
+  return c;
+}
+
+function nombreHojaTarjas_(fecha) {
+  return 'TARJAS_' + String(fecha).slice(0, 4);
+}
+
+/** La hoja TARJAS_<año>; la crea con encabezado y formato de texto si no existe. */
+function hojaTarjas_(anio) {
+  var ss = ss_();
+  var nombre = 'TARJAS_' + anio;
+  var sh = ss.getSheetByName(nombre);
+  if (sh) return sh;
+  sh = ss.insertSheet(nombre);
+  var enc = HOJAS.TARJAS;
+  sh.getRange(1, 1, 1, enc.length).setValues([enc]);
+  sh.setFrozenRows(1);
+  sh.getRange(1, 1, 1, enc.length).setFontWeight('bold');
+  enc.forEach(function (col, i) {
+    if (col.indexOf('fecha') === 0 || col === 'ts' || col.indexOf('ts_') === 0) {
+      sh.getRange(2, i + 1, sh.getMaxRows() - 1, 1).setNumberFormat('@');
+    }
+  });
+  return sh;
 }
 
 // ---------- lectura / escritura ----------
@@ -134,7 +183,7 @@ function leer_(nombre) {
   var sh = hoja_(nombre);
   var ultima = sh.getLastRow();
   if (ultima < 2) return [];
-  var cols = HOJAS[nombre];
+  var cols = colsDe_(nombre);
   var datos = sh.getRange(2, 1, ultima - 1, cols.length).getValues();
   return datos.map(function (fila, i) {
     var o = { _fila: i + 2 };
@@ -146,7 +195,7 @@ function leer_(nombre) {
 /** Agrega una fila a partir de un objeto, respetando el orden de columnas. */
 function agregar_(nombre, obj) {
   var sh = hoja_(nombre);
-  var fila = HOJAS[nombre].map(function (c) {
+  var fila = colsDe_(nombre).map(function (c) {
     return obj[c] === undefined || obj[c] === null ? '' : obj[c];
   });
   sh.appendRow(fila);
@@ -156,7 +205,7 @@ function agregar_(nombre, obj) {
 /** Actualiza campos puntuales de una fila ya existente. */
 function actualizar_(nombre, numeroFila, cambios) {
   var sh = hoja_(nombre);
-  var cols = HOJAS[nombre];
+  var cols = colsDe_(nombre);
   Object.keys(cambios).forEach(function (k) {
     var idx = cols.indexOf(k);
     if (idx === -1) throw new Error('Columna desconocida "' + k + '" en ' + nombre);

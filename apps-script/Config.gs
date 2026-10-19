@@ -1,85 +1,95 @@
 /**
- * Tarja Diaria y Checklist de Equipos — Obra Corrientes
+ * Tarja de equipos — INGECO (flota pesada)
  * Configuración central: nombres de hojas, encabezados esperados y constantes.
  *
- * Toda la política editable (ítems del checklist, equipos)
- * vive en la planilla, no acá. Este archivo solo define la ESTRUCTURA que la app
- * espera encontrar, para poder auto-diagnosticar desvíos.
+ * La política editable (umbrales, ítems del checklist, qué equipos tarjan)
+ * vive en la planilla (hojas CONFIG, CHECKLIST_ITEMS, EQUIPOS), no acá. Este
+ * archivo define la ESTRUCTURA que la app espera, para auto-diagnosticar desvíos.
  */
 
 var PROP = PropertiesService.getScriptProperties();
 
 var CFG = {
   MAX_HORAS_JORNADA: 14,
-  DIAS_PENDIENTE_ALERTA: 7,
-  PANEL_SESION_HORAS: 8,
-  PIN_MAX_INTENTOS: 5,
-  PIN_BLOQUEO_MIN: 15,
-  TZ: 'America/Argentina/Buenos_Aires'
+  TZ: 'America/Argentina/Buenos_Aires',
+  MODULO: 'TARJAS',
+  URL_PWA: 'https://marcoskatz-cmd.github.io/tarja-flota/',
+  URL_PANEL: 'https://marcoskatz-cmd.github.io/tarja-flota/panel.html'
 };
 
-/**
- * Estructura esperada de la planilla.
- * El orden de las columnas ES el contrato: si alguien renombra o reordena,
- * diagnosticar() lo detecta y el panel lo muestra en vez de fallar en silencio.
- */
+/** Columnas de las hojas fijas. El orden ES el contrato. */
 var HOJAS = {
-  TARJAS: [
-    'id', 'equipo', 'fecha', 'estado', 'operador',
-    'horom_ini', 'horom_fin', 'horas',
-    'foto_monitor', 'foto_horom_ini', 'foto_horom_fin',
-    'horom_ini_sugerido', 'correccion_horom', 'motivo_correccion', 'excepcion',
-    'firma', 'lat', 'lon',
-    'ts_apertura', 'ts_cierre', 'ts_firma',
-    'anulada_ts', 'anulada_por', 'anulada_motivo',
-    'op_id'
+  ABIERTAS: ['tarja_id', 'equipo', 'legajo', 'operador', 'ts_apertura', 'anio'],
+  EQUIPOS: [
+    'codigo', 'descripcion', 'marca', 'modelo', 'patente', 'clasificacion', 'tipo_rodado',
+    'lugar', 'activo_tarja', 'horom_tarja', 'origen_horom',
+    'ultimo_operador', 'ultima_tarja', 'lat', 'lon', 'ts_pos', 'ts_sync'
   ],
+  PERSONAL: ['legajo', 'nombre', 'activo', 'ts_sync'],
+  CONFIG: ['clave', 'valor'],
+  CHECKLIST_ITEMS: ['orden', 'tipo', 'item', 'activo'],
   CHECKLIST_RESP: [
     'id', 'tarja_id', 'equipo', 'fecha', 'orden', 'item', 'estado',
     'foto', 'comentario', 'ts'
-  ],
-  CHECKLIST_ITEMS: [
-    'orden', 'equipo', 'item', 'frecuencia', 'activo'
   ],
   PENDIENTES: [
     'id', 'tarja_id', 'equipo', 'fecha_apertura', 'orden', 'item',
     'comentario', 'foto', 'estado', 'fecha_cierre', 'motivo_cierre', 'cerrado_por'
   ],
-  EQUIPOS: [
-    'equipo', 'tipo', 'token_dispositivo', 'consumo_min', 'consumo_max',
-    'proximo_service', 'horom_actual', 'activo'
-  ],
-  OPERADORES: [
-    'nombre', 'equipo', 'activo'
-  ],
-  LOG: [
-    'ts', 'usuario', 'accion', 'detalle', 'motivo'
-  ]
+  OPERADORES_MANUALES: ['nombre', 'legajo_vinculado', 'ts'],
+  LOG: ['ts', 'usuario', 'accion', 'detalle', 'motivo']
 };
+
+/**
+ * Plantilla de las hojas TARJAS_<año>. No está en HOJAS porque el nombre real
+ * lleva el año; hojaTarjas_() la crea a demanda con este encabezado.
+ */
+var COLS_TARJAS = [
+  'id', 'equipo', 'fecha', 'estado', 'legajo', 'operador', 'operador_manual', 'obra',
+  'horom_ini', 'horom_fin', 'horas',
+  'foto_horom_ini', 'foto_horom_fin',
+  'horom_ini_sugerido', 'correccion_horom', 'motivo_correccion', 'excepcion',
+  'checklist_hecho',
+  'firma', 'lat', 'lon', 'lat_fin', 'lon_fin', 'precision_gps',
+  'cierre_tercero', 'legajo_cierre', 'motivo_cierre_tercero',
+  'ts_apertura', 'ts_cierre', 'ts_firma',
+  'anulada_ts', 'anulada_por', 'anulada_motivo',
+  'op_id'
+];
+HOJAS.TARJAS = COLS_TARJAS;
 
 /** Datos semilla. Todo editable después desde la planilla o el panel. */
 var SEED = {
-  EQUIPOS: [
-    ['PC200', 'oruga', '', 12, 18, '', 0, 'SI'],
-    ['HIDROMEK', 'rodante', '', 10, 16, '', 0, 'SI']
-  ],
   CHECKLIST_ITEMS: [
-    [1, '', 'Pérdidas visibles bajo la máquina', 'diaria', 'SI'],
-    [2, '', 'Mangueras y conexiones hidráulicas', 'diaria', 'SI'],
-    [3, '', 'Dientes, portadientes y cuchilla', 'diaria', 'SI'],
-    [4, '', 'Engrase de pluma, brazo y balde', 'diaria', 'SI'],
-    [5, 'PC200', 'Tren de rodaje: cadenas, rodillos y zapatas', 'diaria', 'SI'],
-    [5, 'HIDROMEK', 'Neumáticos y estado de cubiertas', 'diaria', 'SI'],
-    [6, '', 'Seguridad de cabina: cinturón, matafuego, alarma de retroceso y luces', 'diaria', 'SI']
+    [1, '', 'Pérdidas visibles bajo la máquina', 'SI'],
+    [2, '', 'Mangueras y conexiones hidráulicas', 'SI'],
+    [3, '', 'Dientes, portadientes y cuchilla', 'SI'],
+    [4, '', 'Engrase de pluma, brazo y balde', 'SI'],
+    [5, 'oruga', 'Tren de rodaje: cadenas, rodillos y zapatas', 'SI'],
+    [5, 'rodante', 'Neumáticos y estado de cubiertas', 'SI'],
+    [6, '', 'Seguridad de cabina: cinturón, matafuego, alarma de retroceso y luces', 'SI']
+  ],
+  CONFIG: [
+    ['MAX_HORAS_JORNADA', 14],
+    ['UMBRAL_CORRECCION_HS', 50],
+    ['UMBRAL_DIF_INGECOV_HS', 100],
+    ['HORAS_ABIERTA_AVISO', 16],
+    ['DIAS_SIN_ACTIVIDAD', 7],
+    ['SHEET_ROPA_ID', ''],
+    ['SHEET_LISTA_EQUIPOS_ID', '1EwbNlmBMx3OIviplvHSJM3N4CZ3vVXgVxH208VugG3M'],
+    ['INGECOV_SNAPSHOT_URL', ''],
+    ['SNAPSHOT_SHEET_ID', '']
   ]
 };
 
 var MOTIVO_CIERRE_PENDIENTE = ['Reparado', 'Repuesto pedido', 'Sin acción'];
+var MOTIVO_CIERRE_TERCERO = ['Se olvidó de cerrar', 'Cambio de turno', 'Otro'];
 
 // ---------- helpers de propiedades ----------
 
 function prop_(k) { return PROP.getProperty(k); }
 function setProp_(k, v) { PROP.setProperty(k, String(v)); }
+function borrarProp_(k) { PROP.deleteProperty(k); }
 
 function ss_() {
   var id = prop_('SHEET_ID');
@@ -98,3 +108,21 @@ function ahora_() { return new Date(); }
 function hoyStr_() { return Utilities.formatDate(ahora_(), CFG.TZ, 'yyyy-MM-dd'); }
 function tsStr_() { return Utilities.formatDate(ahora_(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss'); }
 function uuid_() { return Utilities.getUuid(); }
+
+// ---------- CONFIG (hoja) ----------
+
+var CONFIG_CACHE_ = null;
+
+/** Valor de la hoja CONFIG como texto; '' si no está. Cache por ejecución. */
+function config_(clave) {
+  if (!CONFIG_CACHE_) {
+    CONFIG_CACHE_ = {};
+    leer_('CONFIG').forEach(function (r) { CONFIG_CACHE_[String(r.clave)] = String(r.valor == null ? '' : r.valor); });
+  }
+  return CONFIG_CACHE_[clave] === undefined ? '' : CONFIG_CACHE_[clave];
+}
+
+function configNum_(clave) {
+  var n = Number(config_(clave));
+  return isFinite(n) ? n : 0;
+}
