@@ -135,7 +135,14 @@ function syncEquipos_() {
       }, soloPresentes_(f, CAMPOS)));
       altas++;
     } else {
-      actualizar_('EQUIPOS', e._fila, Object.assign({ ts_sync: ts }, soloPresentes_(f, CAMPOS)));
+      var cambios = Object.assign({ ts_sync: ts }, soloPresentes_(f, CAMPOS));
+      // Si el tipo de rodado quedó vacío (no se pudo inferir antes), se vuelve a intentar;
+      // lo que el panel ya definió no se toca.
+      if (!String(e.tipo_rodado || '').trim()) {
+        var inferido = inferirTipoRodado_(f.clasificacion, f.modelo || e.modelo || '');
+        if (inferido) cambios.tipo_rodado = inferido;
+      }
+      actualizar_('EQUIPOS', e._fila, cambios);
       actualizados++;
     }
   });

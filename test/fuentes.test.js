@@ -135,3 +135,12 @@ module.exports['I7: equipo que desaparece de la LISTA queda activo_tarja = NO'] 
   assert.strictEqual(ctx.leer_('EQUIPOS').find((e) => e.codigo === 'EX-01').activo_tarja, 'NO');
   assert.strictEqual(ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03').activo_tarja, 'SI');
 };
+
+module.exports['syncEquipos_ reinfiere tipo_rodado solo cuando quedó vacío'] = () => {
+  const ctx = armar();
+  ctx.syncEquipos_();
+  const cf = ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03');
+  ctx.actualizar_('EQUIPOS', cf._fila, { tipo_rodado: '' });
+  ctx.syncEquipos_();
+  assert.strictEqual(ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03').tipo_rodado, 'rodante');
+};

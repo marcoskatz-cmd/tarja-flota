@@ -33,8 +33,10 @@ function esPesado_(clasificacion, codigo) {
 /** 'oruga' | 'rodante' | '' cuando no se puede inferir (se corrige a mano en el panel). */
 function inferirTipoRodado_(clasificacion, modelo) {
   var c = normalizarTexto_(clasificacion + ' ' + (modelo || ''));
-  if (/(EXCAVADORA|TOPADORA|RETROEXCAVADORA SOBRE ORUGA|PAVIMENTADORA)/.test(c)) return 'oruga';
-  if (/(CARGADORA|MOTONIVELADORA|RODILLO|COMPACTADOR|RETRO|MINICARGADORA|FRESADORA)/.test(c)) return 'rodante';
+  // Primero lo rodante que contiene palabras de oruga ("Retropala" vs "Retroexcavadora").
+  if (/(RETROPALA|CARGADOR|MOTONIVELADORA|RODILLO|COMPACTADOR|MINICARGADORA|FRESADORA)/.test(c)) return 'rodante';
+  if (/(EXCAVADORA|TOPADORA|PAVIMENTADORA|TERMINADORA)/.test(c)) return 'oruga';
+  if (/RETRO/.test(c)) return 'rodante';
   return '';
 }
 

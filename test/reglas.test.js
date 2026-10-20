@@ -72,3 +72,9 @@ module.exports = {
     assert.strictEqual(ctx.textoUltimaTarja_('', '2026-10-19', ''), '');
   }
 };
+
+module.exports['inferirTipoRodado_: cargador frontal (masculino) → rodante, terminadora → oruga'] = () => {
+  assert.strictEqual(ctx.inferirTipoRodado_('Cargador frontal', 'CAT 938G'), 'rodante');
+  assert.strictEqual(ctx.inferirTipoRodado_('Terminadora de asfalto', 'Dynapac F2500C'), 'oruga');
+  assert.strictEqual(ctx.inferirTipoRodado_('Retropala', 'CAT 416E'), 'rodante');
+};
