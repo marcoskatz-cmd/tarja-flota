@@ -21,7 +21,7 @@ function armar(opciones) {
   // Fuente Ropa
   const ropa = spreadsheetFake(ROPA_ID, 'Ropa');
   ctx.__planillas[ROPA_ID] = ropa;
-  cargarHoja(ropa, 'PERSONAL', ['LEGAJO', 'APELLIDO Y NOMBRE', 'ACTIVO'], [[101, 'PÉREZ JUAN', 'SI'], [102, 'GÓMEZ ANA', 'NO']]);
+  cargarHoja(ropa, 'PERSONAL', ['LEGAJO', 'APELLIDO Y NOMBRE', 'ACTIVO'], [[101, 'PÉREZ JUAN', 'SÍ'], [102, 'GÓMEZ ANA', 'NO']]);
   // Snapshot INGECOV (planilla)
   const snap = spreadsheetFake(SNAP_ID, 'snapshot');
   ctx.__planillas[SNAP_ID] = snap;

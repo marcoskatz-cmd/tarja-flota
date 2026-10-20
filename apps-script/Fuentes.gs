@@ -179,7 +179,8 @@ function syncPersonal_() {
   fuenteOk_('DIAG_PERSONAL');
   var ts = tsStr_();
   var activos = t.filas.filter(function (f) {
-    var a = at_(f, iAct).toUpperCase();
+    // Ropa escribe "SÍ" con tilde: comparar normalizado.
+    var a = normalizarTexto_(at_(f, iAct));
     return at_(f, iLeg) && at_(f, iNom) && (iAct < 0 || a === 'SI' || a === 'ACTIVO' || a === 'TRUE' || a === '1');
   }).map(function (f) {
     return { legajo: at_(f, iLeg), nombre: at_(f, iNom), activo: 'SI', ts_sync: ts };
