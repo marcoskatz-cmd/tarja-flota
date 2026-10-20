@@ -6,41 +6,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0f766e">
 <title>Tarja de equipos — Panel</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <link rel="stylesheet" href="estilo.css?v=3">
 <style>
-  nav.pestanas { display: flex; gap: .35rem; padding: .6rem 1rem 0; overflow-x: auto; background: var(--acento); }
-  nav.pestanas button {
-    flex: 0 0 auto; border: 0; background: rgba(255,255,255,.15); color: #fff;
-    padding: .55rem .9rem; border-radius: .6rem .6rem 0 0; font-size: .92rem; font-weight: 600;
-  }
-  nav.pestanas button.activa { background: var(--fondo); color: var(--acento); }
-  main { max-width: 1100px; }
-  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
-  th, td { text-align: left; padding: .55rem .4rem; border-bottom: 1px solid var(--borde); vertical-align: top; }
-  th { color: var(--tenue); font-weight: 600; font-size: .82rem; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  main { max-width: 860px; }
+  .cabecera-lista { position: sticky; top: 0; z-index: 5; background: var(--fondo); padding: .2rem 0 .1rem; }
+  .cabecera-lista input { margin-bottom: .4rem; }
+  .lista-eq { display: grid; gap: .45rem; }
+  .eq-fila { background: var(--tarjeta); border: 1px solid var(--borde); border-left-width: 6px; border-radius: .7rem; }
+  .eq-fila.abierta { border-left-color: #1e3a8a; }
+  .eq-fila.cerrada { border-left-color: var(--acento); }
+  .eq-fila.sin_tarja { border-left-color: var(--alerta); }
+  .eq-fila.sin_actividad { border-left-color: var(--borde); }
+  .eq-cab { width: 100%; display: grid; grid-template-columns: 5.2rem 1fr auto; gap: .6rem; align-items: center;
+    text-align: left; background: none; border: 0; padding: .65rem .8rem; color: var(--texto); font-size: .93rem; }
+  .eq-cod { font-weight: 800; font-size: 1.15rem; color: #1e3a8a; letter-spacing: .02em; }
+  .eq-der { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; }
+  .eq-horom { font-size: .8rem; }
+  .eq-det { padding: 0 .8rem .8rem; border-top: 1px solid var(--borde); }
+  .chip.azul { background: #e8eef7; color: #1e3a8a; }
+  .bloque { margin-top: .7rem; }
+  .bloque .fila select { width: auto; font-size: .85rem; padding: .35rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+  th, td { text-align: left; padding: .45rem .35rem; border-bottom: 1px solid var(--borde); vertical-align: top; }
+  th { color: var(--tenue); font-weight: 600; font-size: .78rem; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.anulada td { text-decoration: line-through; color: var(--tenue); }
   .scroll-x { overflow-x: auto; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .7rem; }
-  .eq { border: 1px solid var(--borde); border-left-width: 6px; border-radius: .8rem; padding: .7rem .9rem; background: var(--tarjeta); }
-  .eq .codigo { font-size: 1.25rem; }
-  .eq.cerrada { border-left-color: var(--acento); }
-  .eq.abierta { border-left-color: #1e3a8a; }
-  .eq.sin_tarja { border-left-color: var(--alerta); }
-  .eq.sin_actividad { border-left-color: var(--borde); opacity: .75; }
-  .chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0 .8rem; }
-  .chips button { border: 1px solid var(--borde); background: var(--tarjeta); border-radius: 999px; padding: .3rem .8rem; font-size: .85rem; }
-  .chips button.activa { background: var(--acento); color: #fff; border-color: var(--acento); }
-  #mapa { height: 70vh; min-height: 380px; border-radius: .9rem; border: 1px solid var(--borde); }
-  .leyenda-mapa span { display: inline-flex; align-items: center; gap: .3rem; margin-right: 1rem; font-size: .85rem; }
-  .punto { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
-  .marcador-eq { background: transparent; border: 0; }
-  .marcador-eq .pin { display: flex; align-items: center; gap: .25rem; background: #fff; border-radius: 999px; padding: 2px 8px 2px 4px; font-weight: 800; font-size: .8rem; color: #14212c; box-shadow: 0 1px 4px rgba(0,0,0,.35); white-space: nowrap; }
+  .ajustes { display: flex; flex-wrap: wrap; gap: .8rem; align-items: center; margin-top: .8rem; font-size: .88rem; }
+  .ajustes label { margin: 0; font-weight: 500; display: flex; gap: .4rem; align-items: center; }
+  .ajustes select { width: auto; padding: .35rem; font-size: .88rem; }
+  button.chip { border: 1px solid var(--borde); background: var(--tarjeta); cursor: pointer; }
+  .inactivos { margin-top: 1.2rem; font-size: .9rem; }
+  .inactivos summary { cursor: pointer; color: var(--tenue); padding: .4rem 0; }
+  .fila-inactiva { display: flex; justify-content: space-between; gap: .6rem; padding: .45rem 0; border-bottom: 1px solid var(--borde); }
+  .pie-panel { text-align: center; margin-top: 1.2rem; font-size: .88rem; }
+  .pie-panel a { color: var(--acento); }
   .bloqueado { text-align: center; padding: 3rem 1rem; }
   .bloqueado a { color: var(--acento); font-weight: 700; }
-  select, input[type=month], input[type=number], input[type=search] { width: auto; min-width: 10rem; }
-  .fila-form { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin-bottom: .8rem; }
-  .fila-form label { margin: 0 0 .25rem; }
+  @media (max-width: 520px) { .eq-cab { grid-template-columns: 4.2rem 1fr; } .eq-der { grid-column: 1 / -1; flex-direction: row; justify-content: flex-start; } }
 </style>
 </head>
 <body>
@@ -51,16 +54,13 @@
   </div>
   <button id="btnActualizar" hidden>Actualizar</button>
 </header>
-<nav class="pestanas" id="nav" hidden></nav>
 <main id="app"><div class="cargando">Cargando…</div></main>
 
 <div class="marca"><img class="ingeco" src="logos/ingeco.png" alt="INGECO" onerror="this.remove()"></div>
 <script>window.TARJA_API_URL = 'https://script.google.com/macros/s/AKfycbydf1RDfDnIPZs2uZaiXyZ7uPsmw67gUbQ1C2-NRcZkmg9OO4ZMQe45AyMTc75k0nEv/exec';</script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script src="reglas.js?v=3"></script>
 <script src="cola.js?v=3"></script>
 <script src="api.js?v=3"></script>
-<script src="panel-mapa.js?v=3"></script>
 <script src="panel.js?v=3"></script>
 </body>
 </html>
