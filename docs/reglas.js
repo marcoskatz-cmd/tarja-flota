@@ -48,7 +48,7 @@ function calcularHoras_(ini, fin, max) {
       horomIni + '). Revisá el valor.' };
   }
   if (horas > max) {
-    return { ok: false, error: 'La diferencia da ' + horas.toFixed(1) + ' h, más de las ' +
+    return { ok: false, exceso: true, error: 'La diferencia da ' + horas.toFixed(1) + ' h, más de las ' +
       max + ' h permitidas en una jornada. Revisá el valor.' };
   }
   return { ok: true, horas: horas };
@@ -97,6 +97,7 @@ function buscarNomina_(personas, texto) {
  */
 function diferenciaSospechosa_(tipeado, sugerido, origen, umbral) {
   if (String(origen) === 'INGECOV') return false;
+  if (sugerido === null || sugerido === '' || sugerido === undefined) return false;
   var t = Number(tipeado), s = Number(sugerido);
   if (!isFinite(t) || !isFinite(s)) return false;
   return Math.abs(t - s) > Number(umbral);

@@ -73,20 +73,33 @@ function leerListaEquipos_() {
   var faltan = [];
   if (iCod < 0) faltan.push('CODIGO');
   if (iCla < 0) faltan.push('CLASIFICACION');
-  if (faltan.length) return { filas: [], faltan: faltan };
+  if (faltan.length) return { filas: [], faltan: faltan, opcionales: [] };
+  // Columnas opcionales: si faltan, se importa igual pero sin pisar esos campos.
+  var opcionales = [];
+  if (iMar < 0) opcionales.push('MARCA');
+  if (iMod < 0) opcionales.push('MODELO');
+  if (iPat < 0) opcionales.push('PATENTE');
+  if (iUbi < 0) opcionales.push('UBICACION');
   var filas = t.filas.map(function (f) {
     var codigo = at_(f, iCod);
     if (!codigo) return null;
     var clasif = at_(f, iCla), marca = at_(f, iMar), modelo = at_(f, iMod);
-    return {
-      codigo: codigo.toUpperCase(),
-      clasificacion: clasif, marca: marca, modelo: modelo,
-      descripcion: [clasif, marca, modelo].filter(Boolean).join(' '),
-      patente: at_(f, iPat),
-      lugar: at_(f, iUbi)
-    };
+    var o = { codigo: codigo.toUpperCase(), clasificacion: clasif };
+    if (iMar >= 0) o.marca = marca;
+    if (iMod >= 0) o.modelo = modelo;
+    if (iPat >= 0) o.patente = at_(f, iPat);
+    if (iUbi >= 0) o.lugar = at_(f, iUbi);
+    if (iMar >= 0 && iMod >= 0) o.descripcion = [clasif, marca, modelo].filter(Boolean).join(' ');
+    return o;
   }).filter(Boolean);
-  return { filas: filas, faltan: [] };
+  return { filas: filas, faltan: [], opcionales: opcionales };
+}
+
+/** Deja en el objeto solo los campos que la fuente trajo (no pisa con vacío lo que falta). */
+function soloPresentes_(f, claves) {
+  var out = {};
+  claves.forEach(function (k) { if (f[k] !== undefined) out[k] = f[k]; });
+  return out;
 }
 
 /** Upsert de EQUIPOS por código. Respeta tipo_rodado y activo_tarja editados a mano. */
@@ -97,32 +110,46 @@ function syncEquipos_() {
       'La LISTA DE EQUIPOS cambió');
     return { altas: 0, actualizados: 0, faltan: fuente.faltan };
   }
-  fuenteOk_('DIAG_EQUIPOS');
+  if (fuente.opcionales.length) {
+    fuenteFallo_('DIAG_EQUIPOS', 'A la LISTA DE EQUIPOS le falta la columna ' + fuente.opcionales.join(', ') +
+      ' (se importa igual, sin actualizar esos datos).', 'La LISTA DE EQUIPOS cambió');
+  } else {
+    fuenteOk_('DIAG_EQUIPOS');
+  }
   var actuales = {};
   leer_('EQUIPOS').forEach(function (e) { actuales[String(e.codigo).toUpperCase()] = e; });
-  var ts = tsStr_(), altas = 0, actualizados = 0;
+  var ts = tsStr_(), altas = 0, actualizados = 0, bajas = 0;
+  var vistos = {};
+  var CAMPOS = ['descripcion', 'marca', 'modelo', 'patente', 'clasificacion', 'lugar'];
   fuente.filas.forEach(function (f) {
     if (!esPesado_(f.clasificacion, f.codigo)) return;
+    vistos[f.codigo] = true;
     var e = actuales[f.codigo];
     if (!e) {
-      agregar_('EQUIPOS', {
-        codigo: f.codigo, descripcion: f.descripcion, marca: f.marca, modelo: f.modelo,
-        patente: f.patente, clasificacion: f.clasificacion,
-        tipo_rodado: inferirTipoRodado_(f.clasificacion, f.modelo),
-        lugar: f.lugar, activo_tarja: 'SI',
+      agregar_('EQUIPOS', Object.assign({
+        codigo: f.codigo, descripcion: '', marca: '', modelo: '', patente: '', clasificacion: '',
+        tipo_rodado: inferirTipoRodado_(f.clasificacion, f.modelo || ''),
+        lugar: '', activo_tarja: 'SI',
         horom_tarja: '', origen_horom: '', ultimo_operador: '', ultima_tarja: '',
         lat: '', lon: '', ts_pos: '', ts_sync: ts
-      });
+      }, soloPresentes_(f, CAMPOS)));
       altas++;
     } else {
-      actualizar_('EQUIPOS', e._fila, {
-        descripcion: f.descripcion, marca: f.marca, modelo: f.modelo,
-        patente: f.patente, clasificacion: f.clasificacion, lugar: f.lugar, ts_sync: ts
-      });
+      actualizar_('EQUIPOS', e._fila, Object.assign({ ts_sync: ts }, soloPresentes_(f, CAMPOS)));
       actualizados++;
     }
   });
-  return { altas: altas, actualizados: actualizados, faltan: [] };
+  // Equipos que ya no están en la LISTA (vendidos, dados de baja): dejan de tarjar.
+  // No se reactivan solos si vuelven: activo_tarja es decisión del panel.
+  Object.keys(actuales).forEach(function (c) {
+    var e = actuales[c];
+    if (!vistos[c] && String(e.activo_tarja).toUpperCase() === 'SI') {
+      actualizar_('EQUIPOS', e._fila, { activo_tarja: 'NO', ts_sync: ts });
+      log_('sync', 'BAJA_EQUIPO', c + ' ya no está en la LISTA DE EQUIPOS', '');
+      bajas++;
+    }
+  });
+  return { altas: altas, actualizados: actualizados, bajas: bajas, faltan: [] };
 }
 
 // ---------- personal ----------
@@ -157,12 +184,13 @@ function syncPersonal_() {
   }).map(function (f) {
     return { legajo: at_(f, iLeg), nombre: at_(f, iNom), activo: 'SI', ts_sync: ts };
   });
-  // Reemplazo completo: la nómina es chica y la fuente es la verdad.
+  // Reemplazo completo en una sola escritura: la matriz se arma entera antes
+  // de tocar la hoja, así un corte a mitad no deja la nómina vacía.
   var sh = hoja_('PERSONAL');
   var enc = HOJAS.PERSONAL;
+  var matriz = [enc].concat(activos.map(function (p) { return enc.map(function (c) { return p[c] === undefined ? '' : p[c]; }); }));
   sh.clearContents();
-  sh.getRange(1, 1, 1, enc.length).setValues([enc]);
-  activos.forEach(function (p) { agregar_('PERSONAL', p); });
+  sh.getRange(1, 1, matriz.length, enc.length).setValues(matriz);
   return { total: activos.length, faltan: [] };
 }
 

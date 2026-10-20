@@ -181,3 +181,53 @@ module.exports = {
     assert.strictEqual(String(eq.lat), '', 'no pisa la posición con vacío');
   }
 };
+
+// ---------- correcciones del review final ----------
+
+module.exports['C1: cerrar acepta op_id_apertura y resuelve la tarja en el servidor'] = () => {
+  const ctx = armar();
+  abrir(ctx, { op_id: 'ap-77' });
+  const r = ctx.cerrarTarja_({ op_id_apertura: 'ap-77', foto_horometro: FOTO, horom_fin: 4805, legajo: '101', op_id: 'c-1' });
+  assert.strictEqual(r.horas, 5);
+  assert.strictEqual(ctx.leer_('ABIERTAS').length, 0);
+};
+module.exports['C1: cerrar con op_id_apertura desconocido explica que falta la apertura'] = () => {
+  const ctx = armar();
+  assert.throws(() => ctx.cerrarTarja_({ op_id_apertura: 'nada', foto_horometro: FOTO, horom_fin: 1, op_id: 'c' }), /apertura/i);
+};
+module.exports['C2: el 1 de enero se puede consultar estado y abrir aunque no exista la hoja del año'] = () => {
+  const ctx = armar('2026-01-01');
+  ctx.ss_().deleteSheet(ctx.ss_().getSheetByName('TARJAS_2026'));
+  const e = ctx.estadoDelDia_({ equipo: 'CF-03' });
+  assert.strictEqual(e.checklist_pendiente, true);
+  const r = abrir(ctx);
+  assert.strictEqual(r.ya_existia, false);
+  assert.strictEqual(ctx.leer_('TARJAS_2026').length, 1);
+};
+module.exports['I1: checklist inválido no deja nada escrito'] = () => {
+  const ctx = armar();
+  const items = checklistOk(ctx, 'CF-03');
+  items[0] = { orden: items[0].orden, estado: 'PROBLEMA', foto: '', comentario: '' };
+  assert.throws(() => abrir(ctx, { checklist: items }), /foto/);
+  assert.strictEqual(ctx.leer_('TARJAS_2026').length, 0);
+  assert.strictEqual(ctx.leer_('ABIERTAS').length, 0);
+};
+module.exports['I2: equipo sin horómetro previo acepta cualquier valor sin motivo ni confirmación'] = () => {
+  const ctx = armar('2026-10-19', [{ codigo: 'MN-02', descripcion: 'Moto', tipo_rodado: 'rodante', lugar: '', activo_tarja: 'SI', horom_tarja: '', origen_horom: '' }]);
+  const e = ctx.estadoDelDia_({ equipo: 'MN-02' });
+  assert.strictEqual(e.sugerido, null);
+  const r = ctx.abrirTarja_({ equipo: 'MN-02', legajo: '101', operador: 'PÉREZ JUAN', firma: FOTO, foto_horometro: FOTO, horom_ini: 4812, checklist: checklistOk(ctx, 'MN-02'), op_id: 'o' });
+  assert.strictEqual(r.ya_existia, false);
+  assert.strictEqual(ctx.leer_('TARJAS_2026')[0].excepcion, 'NO');
+};
+module.exports['I3: cierre con más de MAX horas se acepta solo con confirmación y motivo, y queda como excepción'] = () => {
+  const ctx = armar();
+  const a = abrir(ctx);
+  assert.throws(() => ctx.cerrarTarja_({ tarja_id: a.tarja.id, foto_horometro: FOTO, horom_fin: 4830, legajo: '101', op_id: 'c1' }), /14 h/);
+  assert.throws(() => ctx.cerrarTarja_({ tarja_id: a.tarja.id, foto_horometro: FOTO, horom_fin: 4830, legajo: '101', confirmo_exceso: true, op_id: 'c2' }), /motivo/i);
+  const r = ctx.cerrarTarja_({ tarja_id: a.tarja.id, foto_horometro: FOTO, horom_fin: 4830, legajo: '101', confirmo_exceso: true, motivo_exceso: 'Quedó abierta dos días', op_id: 'c3' });
+  assert.strictEqual(r.horas, 30);
+  const t = ctx.leer_('TARJAS_2026')[0];
+  assert.strictEqual(t.excepcion, 'SI');
+  assert.ok(ctx.leer_('LOG').some((l) => l.accion === 'EXCESO_HORAS'));
+};

@@ -23,6 +23,8 @@ const hFecha = document.getElementById('hFecha');
 const hQuien = document.getElementById('hQuien');
 const btnCambiar = document.getElementById('btnCambiar');
 
+const MAX_HORAS = 14;   // mismo valor que CONFIG del servidor (el servidor manda)
+
 let estado = null;      // respuesta de `estado` (o armada desde caché)
 let borrador = null;    // lo que el operario viene cargando
 let equipo = null;      // equipo elegido (objeto de Datos)
@@ -140,7 +142,7 @@ function estadoDesdeCache() {
     equipo: equipo.codigo,
     tipo_rodado: equipo.tipo_rodado,
     abierta: ab ? { tarja_id: ab.tarja_id || '', operador: ab.operador, legajo: ab.legajo, horom_ini: ab.horom_ini, ts_apertura: ab.ts, op_id_apertura: ab.op_id } : null,
-    sugerido: Number(equipo.horom_tarja || 0),
+    sugerido: (equipo.horom_tarja === '' || equipo.horom_tarja == null) ? null : Number(equipo.horom_tarja),
     origen_horom: equipo.origen_horom || '',
     checklist_pendiente: !(ab && ab.fecha === hoyLocal()) && localStorage.getItem('tf_checklist_' + equipo.codigo) !== hoyLocal(),
     items: Datos.itemsPara(equipo.tipo_rodado),
@@ -154,20 +156,39 @@ function esMia(abierta) {
   return normalizarTexto_(quien.nombre) === normalizarTexto_(abierta.operador);
 }
 
-function pantallaInicio() {
+async function pantallaInicio() {
   const sinSenal = estado.offline ? aviso('alerta', 'Sin señal. Podés cargar igual: se guarda en el celular y se envía solo después.') : '';
+  // Cargas que el servidor rechazó: se muestran hasta que el operario las vea.
+  const rech = await API.rechazadas();
+  if (rech.length) return pantallaRechazadas(rech);
   if (estado.abierta && !esMia(estado.abierta)) return pantallaAbiertaPorOtro(sinSenal);
   if (estado.abierta) return pantallaCierre(sinSenal);
+  const horom = estado.sugerido === null
+    ? 'Sin horómetro previo registrado: el primero que cargues es el que vale.'
+    : `Último horómetro: <strong>${estado.sugerido}</strong>${estado.origen_horom === 'INGECOV' ? ' (según mantenimiento)' : ''}`;
   pintar(`
     ${sinSenal}
     <div class="tarjeta centro">
       <div class="codigo">${esc(equipo.codigo)}</div>
       <div class="desc">${esc(equipo.descripcion || '')}</div>
-      <div class="tenue">Último horómetro: <strong>${estado.sugerido}</strong>${estado.origen_horom === 'INGECOV' ? ' (según mantenimiento)' : ''}</div>
+      <div class="tenue">${horom}</div>
     </div>
     <button class="principal" id="abrir">Empezar la jornada</button>
   `);
   document.getElementById('abrir').onclick = aperturaHorometro;
+}
+
+/** El servidor rechazó una carga hecha sin señal. No se pierde en silencio. */
+function pantallaRechazadas(rech) {
+  const r = rech[0];
+  const que = r.action === 'abrir' ? 'la apertura' : 'el cierre';
+  const cuando = new Date(r.ts).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  pintar(`
+    ${aviso('error', `<strong>No se pudo registrar ${que} de ${esc(r.equipo)}</strong> que cargaste el ${esc(cuando)} sin señal.<br>El sistema respondió: <em>${esc(r.error)}</em>`)}
+    <p class="ayuda">Si hace falta, cargala de nuevo. Si tenés dudas, avisá a la oficina con el código del equipo y la hora.</p>
+    <button class="principal" id="ok">Entendido</button>
+  `);
+  document.getElementById('ok').onclick = async () => { await API.descartarRechazada(r.id); iniciar(); };
 }
 
 // ---------- identidad y equipo ----------
@@ -233,7 +254,8 @@ function aperturaHorometro() {
 
 /** La foto arriba y el número debajo: se tipea mirando la misma imagen. */
 function aperturaValor(foto, repetir) {
-  const sugerido = Number(estado.sugerido || 0);
+  const sinPrevio = estado.sugerido === null || estado.sugerido === undefined;
+  const sugerido = sinPrevio ? null : Number(estado.sugerido);
   pintar(`
     <h2>Horómetro</h2>
     <img class="previa" src="${foto}" alt="Foto del horómetro">
@@ -241,8 +263,8 @@ function aperturaValor(foto, repetir) {
     <button class="secundaria" id="rep">Repetir la foto</button>
     <div class="tarjeta" style="margin-top:.9rem">
       <label>Escribí lo que muestra el horómetro</label>
-      <input type="number" id="valor" inputmode="decimal" step="0.1" value="${sugerido}">
-      <div class="tenue" style="margin-top:.5rem">Último registrado en ${esc(equipo.codigo)}: <strong>${sugerido}</strong>.</div>
+      <input type="number" id="valor" inputmode="decimal" step="0.1" ${sinPrevio ? 'placeholder="Ej.: 4812.5"' : `value="${sugerido}"`}>
+      <div class="tenue" style="margin-top:.5rem">${sinPrevio ? 'Sin horómetro previo registrado en ' + esc(equipo.codigo) + '.' : `Último registrado en ${esc(equipo.codigo)}: <strong>${sugerido}</strong>.`}</div>
       <div id="bloqueMotivo" hidden>
         <label>¿Por qué no coincide?</label>
         <textarea id="motivo" rows="3" placeholder="Ej.: el horómetro se reinició, o el valor anterior se cargó mal"></textarea>
@@ -253,14 +275,14 @@ function aperturaValor(foto, repetir) {
 
   const valor = document.getElementById('valor');
   const bloque = document.getElementById('bloqueMotivo');
-  valor.oninput = () => { bloque.hidden = Math.abs(Number(valor.value) - sugerido) <= 0.001; };
+  valor.oninput = () => { bloque.hidden = sinPrevio || Math.abs(Number(valor.value) - sugerido) <= 0.001; };
   document.getElementById('rep').onclick = repetir;
 
   document.getElementById('seguir').onclick = conError(() => {
     const v = Number(valor.value);
     if (valor.value === '' || !isFinite(v) || v < 0) throw new Error('El valor del horómetro no es válido.');
     const motivo = document.getElementById('motivo').value.trim();
-    const corregido = Math.abs(v - sugerido) > 0.001;
+    const corregido = !sinPrevio && Math.abs(v - sugerido) > 0.001;
     if (corregido && !motivo) throw new Error('El número no coincide con el último registrado: hace falta explicar por qué.');
     borrador.foto_horometro = foto;
     borrador.horom_ini = v;
@@ -448,6 +470,7 @@ function aperturaFirma() {
       if (e.code === 'CONFIRMAR_EQUIPO') {
         return preguntarEquipo(borrador.horom_ini, estado.sugerido, () => { borrador.confirmo_equipo = true; aperturaFirma(); });
       }
+      enviar.disabled = false; enviar.textContent = 'Abrir la jornada';
       throw e;
     }
     if (borrador.checklist.length) localStorage.setItem('tf_checklist_' + equipo.codigo, hoyLocal());
@@ -500,6 +523,10 @@ function cierreValor(foto, repetir, tercero) {
       <input type="number" id="valor" inputmode="decimal" step="0.1" placeholder="Ej.: ${(ini + 8).toFixed(1)}">
       <div class="tenue" style="margin-top:.5rem">Al abrir marcaba <strong>${ini}</strong>${tercero ? ` (la abrió ${esc(a.operador)})` : ''}.</div>
       <div id="calc" class="tenue" style="margin-top:.4rem"></div>
+      <div id="bloqueExceso" hidden>
+        <label>¿Por qué da más de ${MAX_HORAS} horas?</label>
+        <textarea id="motivoExceso" rows="2" placeholder="Ej.: quedó abierta desde ayer, se trabajó dos turnos"></textarea>
+      </div>
       ${tercero ? `
         <label>¿Por qué la cerrás vos?</label>
         <div class="opciones-col" id="motivos">
@@ -512,6 +539,8 @@ function cierreValor(foto, repetir, tercero) {
   const valor = document.getElementById('valor');
   const calc = document.getElementById('calc');
   const enviar = document.getElementById('enviar');
+  const bloqueExceso = document.getElementById('bloqueExceso');
+  const motivoExceso = document.getElementById('motivoExceso');
   let motivo = '';
   document.getElementById('rep').onclick = repetir;
 
@@ -519,14 +548,22 @@ function cierreValor(foto, repetir, tercero) {
     const v = Number(valor.value);
     const h = v - ini;
     let ok = true;
+    let exceso = false;
     if (!valor.value || !isFinite(v)) { calc.textContent = ''; ok = false; }
     else if (h < 0) { calc.textContent = 'El valor es menor que el de apertura. Revisalo.'; ok = false; }
-    else if (h > 14) { calc.textContent = `Daría ${h.toFixed(1)} h de trabajo, más de las 14 permitidas. Revisalo.`; ok = false; }
+    else if (h > MAX_HORAS) {
+      // Jornada que quedó abierta días: se puede cerrar igual, explicando por qué.
+      exceso = true;
+      calc.textContent = `Daría ${h.toFixed(1)} h, más de las ${MAX_HORAS} de una jornada. Si el número está bien, explicá por qué.`;
+      if (!motivoExceso.value.trim()) ok = false;
+    }
     else calc.textContent = `Serían ${h.toFixed(1)} horas de trabajo.`;
+    bloqueExceso.hidden = !exceso;
     if (tercero && !motivo) ok = false;
     enviar.disabled = !ok;
   }
   valor.oninput = revisar;
+  motivoExceso.oninput = revisar;
   if (tercero) {
     document.querySelectorAll('#motivos .opcion').forEach((b) => {
       b.onclick = () => {
@@ -546,9 +583,16 @@ function cierreValor(foto, repetir, tercero) {
       ...Camara.gpsParaEnvio()
     };
     if (tercero) datos.motivo_cierre_tercero = motivo;
+    if (Number(valor.value) - ini > MAX_HORAS) { datos.confirmo_exceso = true; datos.motivo_exceso = motivoExceso.value.trim(); }
     if (a.tarja_id) datos.tarja_id = a.tarja_id;
     else datos.op_id_apertura = a.op_id_apertura;
-    const r = await API.enviar('cerrar', datos, equipo.codigo);
+    let r;
+    try {
+      r = await API.enviar('cerrar', datos, equipo.codigo);
+    } catch (e) {
+      enviar.disabled = false; enviar.textContent = 'Cerrar la jornada';
+      throw e;
+    }
     borrarAbiertaLocal(equipo.codigo);
     Datos.actualizarEquipo(equipo.codigo, { horom_tarja: Number(valor.value), origen_horom: 'TARJA', abierta_por: '', ultimo_operador: quien.nombre, ultima_tarja: hoyLocal() });
     if (r.encolado) return pantallaGuardadoSinSeñal('La jornada quedó cerrada en este celular.');
@@ -569,15 +613,20 @@ function pantallaGuardadoSinSeñal(extra) {
 }
 
 /** Hay cargas de este equipo esperando señal. */
-function pantallaEnCola(items) {
-  const abiertaPend = items.some((i) => i.action === 'abrir');
-  const cierrePend = items.some((i) => i.action === 'cerrar');
+async function pantallaEnCola(items) {
+  const rech = await API.rechazadas();
+  if (rech.length) return pantallaRechazadas(rech);
+  const ultima = items[items.length - 1];
   const ab = abiertaLocal(equipo.codigo);
   let acciones = '';
-  // Apertura en cola y sin cierre: el operario puede cerrar igual, sin señal.
-  if (abiertaPend && !cierrePend && ab) {
-    estado = estadoDesdeCache();
+  estado = estadoDesdeCache();
+  // Lo último encolado fue una apertura: se puede cerrar igual, sin señal.
+  if (ultima.action === 'abrir' && ab) {
     acciones = `<button class="principal" id="cerrar">Cerrar la jornada</button><div style="height:.5rem"></div>`;
+  }
+  // Lo último fue un cierre: se puede empezar otra jornada sin esperar la señal.
+  if (ultima.action === 'cerrar' && !ab) {
+    acciones = `<button class="principal" id="abrir">Empezar otra jornada</button><div style="height:.5rem"></div>`;
   }
   pintar(
     aviso('alerta', `<strong>Hay ${items.length} carga${items.length > 1 ? 's' : ''} de ${esc(equipo.codigo)} sin enviar.</strong> Quedaron guardadas porque no había señal. Se mandan solas cuando vuelva.`) +
@@ -586,6 +635,8 @@ function pantallaEnCola(items) {
   );
   const c = document.getElementById('cerrar');
   if (c) c.onclick = () => pantallaCierre('');
+  const ab2 = document.getElementById('abrir');
+  if (ab2) ab2.onclick = aperturaHorometro;
   document.getElementById('reintentar').onclick = async (ev) => {
     ev.target.disabled = true; ev.target.textContent = 'Enviando…';
     const ok = await API.sincronizar(() => {});

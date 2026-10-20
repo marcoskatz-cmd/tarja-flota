@@ -6,10 +6,12 @@
  * primero van las aperturas y el cierre toma el tarja_id de la respuesta.
  */
 
-/** Aperturas por ts, después el resto por ts. */
+/**
+ * Por orden de carga. En el mismo celular un cierre siempre se encoló después
+ * de su apertura, y así dos jornadas del mismo día salen abrir1, cerrar1, abrir2.
+ */
 function ordenarCola_(items) {
-  const peso = (i) => (i.action === 'abrir' ? 0 : 1);
-  return items.slice().sort((a, b) => (peso(a) - peso(b)) || (a.ts - b.ts));
+  return items.slice().sort((a, b) => a.ts - b.ts);
 }
 
 /**
@@ -24,9 +26,10 @@ function resolverTarjaId_(item, respuestas) {
   if (ref && respuestas[ref]) {
     datos.tarja_id = respuestas[ref];
     delete datos.op_id_apertura;
-    return { ok: true, datos };
   }
-  return { ok: false, motivo: 'Falta enviar la apertura de esta jornada primero.' };
+  // Sin respuesta local (la app se recargó entre medio), viaja con
+  // op_id_apertura y el servidor busca la apertura por su op_id.
+  return { ok: true, datos };
 }
 
 if (typeof window !== 'undefined') window.Cola = { ordenarCola_, resolverTarjaId_ };

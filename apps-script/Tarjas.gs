@@ -58,6 +58,8 @@ function tarjaPorOpId_(opId) {
 /** Tarjas de hoy del equipo (no anuladas). */
 function tarjasDelDia_(codigo, fecha) {
   var c = String(codigo).toUpperCase();
+  // El 1 de enero la hoja del año todavía no existe: no hay tarjas, no un error.
+  if (!ss_().getSheetByName(nombreHojaTarjas_(fecha))) return [];
   return leer_(nombreHojaTarjas_(fecha)).filter(function (t) {
     return String(t.equipo).toUpperCase() === c && String(t.fecha) === fecha && String(t.estado) !== 'anulada';
   });
@@ -98,7 +100,7 @@ function estadoDelDia_(p) {
     descripcion: equipo.descripcion,
     tipo_rodado: equipo.tipo_rodado,
     abierta: abierta,
-    sugerido: Number(equipo.horom_tarja || 0),
+    sugerido: sinHorometro_(equipo) ? null : Number(equipo.horom_tarja),
     origen_horom: String(equipo.origen_horom || ''),
     checklist_pendiente: !checklistHecho,
     items: itemsDe_(equipo.tipo_rodado),
@@ -117,6 +119,11 @@ function tarjaPublica_(t) {
     cierre_tercero: t.cierre_tercero, legajo_cierre: t.legajo_cierre, motivo_cierre_tercero: t.motivo_cierre_tercero,
     ts_apertura: t.ts_apertura, ts_cierre: t.ts_cierre
   };
+}
+
+/** Equipo sin horómetro previo (ni tarja ni siembra): no hay con qué comparar. */
+function sinHorometro_(equipo) {
+  return equipo.horom_tarja === '' || equipo.horom_tarja == null || !isFinite(Number(equipo.horom_tarja));
 }
 
 function gpsValido_(lat, lon) {
@@ -161,11 +168,13 @@ function abrirTarja_(p) {
     if (!p.firma) throw new Error('Falta la firma del operario.');
     if (!p.foto_horometro) throw new Error('Falta la foto del horómetro.');
 
-    var sugerido = Number(equipo.horom_tarja || 0);
+    var sinPrevio = sinHorometro_(equipo);
+    var sugerido = sinPrevio ? '' : Number(equipo.horom_tarja);
     var origen = String(equipo.origen_horom || '');
     var horomIni = Number(p.horom_ini);
     if (!isFinite(horomIni) || horomIni < 0) throw new Error('El valor del horómetro no es un número válido.');
-    var corregido = Math.abs(horomIni - sugerido) > 0.001;
+    // Sin valor previo no hay corrección posible: el primero que se tipea es el que vale.
+    var corregido = !sinPrevio && Math.abs(horomIni - sugerido) > 0.001;
     if (corregido && diferenciaSospechosa_(horomIni, sugerido, origen, configNum_('UMBRAL_CORRECCION_HS')) && !p.confirmo_equipo) {
       throw errorConCodigo_('CONFIRMAR_EQUIPO',
         'El horómetro que tipeaste (' + horomIni + ') está a ' + Math.abs(horomIni - sugerido).toFixed(0) +
@@ -182,6 +191,9 @@ function abrirTarja_(p) {
     if (conChecklist && respuestas.length !== items.length) {
       throw new Error('El checklist está incompleto: faltan ítems por responder.');
     }
+    // Validar TODO antes de escribir nada: si algo falla acá no queda una
+    // jornada a medias con el mismo op_id.
+    if (conChecklist) validarChecklist_(items, respuestas);
 
     var id = uuid_();
     var ts = tsStr_();
@@ -232,16 +244,25 @@ function abrirTarja_(p) {
   }
 }
 
-function guardarChecklist_(tarjaId, equipo, fecha, operador, items, respuestas) {
+function validarChecklist_(items, respuestas) {
   respuestas.forEach(function (r) {
     var item = items.filter(function (i) { return i.orden === Number(r.orden); })[0];
     if (!item) throw new Error('Llegó una respuesta para un ítem que no existe.');
     var estado = String(r.estado).toUpperCase();
     if (estado !== 'OK' && estado !== 'PROBLEMA') throw new Error('El ítem ' + r.orden + ' quedó sin responder.');
-    var urlFoto = '';
     if (estado === 'PROBLEMA') {
       if (!r.foto) throw new Error('El ítem "' + item.item + '" está marcado como falla y necesita foto.');
       if (!String(r.comentario || '').trim()) throw new Error('El ítem "' + item.item + '" está marcado como falla y necesita un comentario.');
+    }
+  });
+}
+
+function guardarChecklist_(tarjaId, equipo, fecha, operador, items, respuestas) {
+  respuestas.forEach(function (r) {
+    var item = items.filter(function (i) { return i.orden === Number(r.orden); })[0];
+    var estado = String(r.estado).toUpperCase();
+    var urlFoto = '';
+    if (estado === 'PROBLEMA') {
       urlFoto = guardarFoto_(r.foto, equipo.codigo, fecha, 'item-' + item.orden);
     }
     var respId = uuid_();
@@ -286,13 +307,24 @@ function cerrarTarja_(p) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    var t = tarjaPorId_(p.tarja_id);
+    // Un cierre encolado sin señal no conoce el tarja_id: referencia la apertura por su op_id.
+    var t = p.tarja_id ? tarjaPorId_(p.tarja_id) : tarjaPorOpId_(p.op_id_apertura);
+    if (!t && !p.tarja_id) throw new Error('Todavía no llegó la apertura de esta jornada. Se va a reintentar cuando llegue.');
     if (!t) throw new Error('No se encontró la jornada. Puede que haya sido anulada desde el panel.');
     if (String(t.estado) === 'anulada') throw new Error('Esta jornada fue anulada desde el panel.');
     if (String(t.estado) !== 'abierta') return { ya_estaba_cerrada: true, tarja: tarjaPublica_(t) };
     if (!p.foto_horometro) throw new Error('Falta la foto del horómetro final.');
 
-    var calc = calcularHoras_(t.horom_ini, p.horom_fin, configNum_('MAX_HORAS_JORNADA') || CFG.MAX_HORAS_JORNADA);
+    var maxHoras = configNum_('MAX_HORAS_JORNADA') || CFG.MAX_HORAS_JORNADA;
+    var calc = calcularHoras_(t.horom_ini, p.horom_fin, maxHoras);
+    var exceso = false;
+    if (!calc.ok && calc.exceso && p.confirmo_exceso) {
+      // Jornada que quedó abierta varios días: se acepta con motivo y queda como excepción.
+      var motivoExceso = String(p.motivo_exceso || '').trim();
+      if (!motivoExceso) throw new Error('Para cerrar con más de ' + maxHoras + ' h hay que indicar el motivo.');
+      calc = { ok: true, horas: Number(p.horom_fin) - Number(t.horom_ini) };
+      exceso = true;
+    }
     if (!calc.ok) throw new Error(calc.error);
 
     var legajoCierre = String(p.legajo || '').trim();
@@ -315,8 +347,10 @@ function cerrarTarja_(p) {
       lat_fin: conGps ? Number(p.lat) : '', lon_fin: conGps ? Number(p.lon) : '',
       cierre_tercero: mismo ? 'NO' : 'SI',
       legajo_cierre: mismo ? '' : (legajoCierre || operadorCierre),
-      motivo_cierre_tercero: mismo ? '' : motivo
+      motivo_cierre_tercero: mismo ? '' : motivo,
+      excepcion: exceso ? 'SI' : t.excepcion
     });
+    if (exceso) log_(operadorCierre || legajoCierre || t.operador, 'EXCESO_HORAS', t.equipo + ' ' + fecha + ': ' + calc.horas.toFixed(1) + ' h', String(p.motivo_exceso).trim());
 
     leer_('ABIERTAS').filter(function (a) { return String(a.tarja_id) === String(t.id); })
       .sort(function (a, b) { return b._fila - a._fila; })

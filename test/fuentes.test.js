@@ -108,3 +108,30 @@ module.exports = {
     assert.strictEqual(Number(ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03').horom_tarja), 5000);
   }
 };
+
+module.exports['I4: columna opcional renombrada no pisa lugar/marca con vacío y deja diagnóstico'] = () => {
+  const ctx = armar();
+  ctx.syncEquipos_();
+  ctx.__planillas[LISTA_ID].getSheetByName('EQUIPOS').filas[0][5] = 'SITIO RARO';
+  const r = ctx.syncEquipos_();
+  assert.strictEqual(r.faltan.length, 0, 'sigue importando');
+  assert.strictEqual(ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03').lugar, 'Autovías');
+  assert.ok(/UBICACION/.test(ctx.prop_('DIAG_EQUIPOS')));
+};
+module.exports['I5: syncPersonal_ escribe de una sola vez (no depende de appendRow fila por fila)'] = () => {
+  const ctx = armar();
+  ctx.hoja_('PERSONAL').appendRow = () => { throw new Error('appendRow no debe usarse'); };
+  const r = ctx.syncPersonal_();
+  assert.strictEqual(r.total, 1);
+  assert.strictEqual(ctx.leer_('PERSONAL').length, 1);
+};
+module.exports['I7: equipo que desaparece de la LISTA queda activo_tarja = NO'] = () => {
+  const ctx = armar();
+  ctx.syncEquipos_();
+  const sh = ctx.__planillas[LISTA_ID].getSheetByName('EQUIPOS');
+  sh.filas.splice(2, 1); // saca EX-01
+  const r = ctx.syncEquipos_();
+  assert.strictEqual(r.bajas, 1);
+  assert.strictEqual(ctx.leer_('EQUIPOS').find((e) => e.codigo === 'EX-01').activo_tarja, 'NO');
+  assert.strictEqual(ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03').activo_tarja, 'SI');
+};

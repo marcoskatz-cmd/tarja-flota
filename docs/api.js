@@ -50,24 +50,49 @@ async function llamar(action, datos = {}) {
 
 const DB_NOMBRE = 'tarja-flota';
 const STORE = 'cola';
+// Cargas que el servidor rechazó por una regla: no se reintentan, pero tampoco
+// desaparecen sin que el operario las vea.
+const STORE_RECHAZADAS = 'rechazadas';
 
 function abrirDB() {
   return new Promise((res, rej) => {
-    const req = indexedDB.open(DB_NOMBRE, 1);
-    req.onupgradeneeded = () => { req.result.createObjectStore(STORE, { keyPath: 'id' }); };
+    const req = indexedDB.open(DB_NOMBRE, 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(STORE_RECHAZADAS)) db.createObjectStore(STORE_RECHAZADAS, { keyPath: 'id' });
+    };
     req.onsuccess = () => res(req.result);
     req.onerror = () => rej(new Error('No se pudo abrir el almacenamiento local.'));
   });
 }
 
-async function conStore(modo, fn) {
+async function conStore(modo, fn, nombre = STORE) {
   const db = await abrirDB();
   return new Promise((res, rej) => {
-    const tx = db.transaction(STORE, modo);
-    const out = fn(tx.objectStore(STORE));
+    const tx = db.transaction(nombre, modo);
+    const out = fn(tx.objectStore(nombre));
     tx.oncomplete = () => res(out && out.result !== undefined ? out.result : out);
     tx.onerror = () => rej(new Error('Falló el almacenamiento local.'));
   });
+}
+
+async function guardarRechazada(item, error) {
+  // Sin las fotos: pesan y ya no se van a enviar. Queda el qué, el cuándo y el porqué.
+  const datos = { ...item.datos };
+  ['foto_horometro', 'firma'].forEach((k) => { delete datos[k]; });
+  if (Array.isArray(datos.checklist)) datos.checklist = datos.checklist.map((c) => ({ ...c, foto: c && c.foto ? '(foto)' : '' }));
+  const r = { id: item.id, action: item.action, equipo: item.equipo, ts: item.ts, ts_rechazo: Date.now(), error, datos };
+  await conStore('readwrite', (s) => s.put(r), STORE_RECHAZADAS);
+}
+
+async function rechazadas() {
+  const items = await conStore('readonly', (s) => s.getAll(), STORE_RECHAZADAS);
+  return (items || []).sort((a, b) => a.ts - b.ts);
+}
+
+async function descartarRechazada(id) {
+  return conStore('readwrite', (s) => s.delete(id), STORE_RECHAZADAS);
 }
 
 async function encolar(action, datos, equipo) {
@@ -110,7 +135,6 @@ async function sincronizar(alAvisar) {
     const items = await pendientesEnCola();
     for (const it of items) {
       const res = resolverTarjaId_(it, aperturasEnviadas);
-      if (!res.ok) { alAvisar && alAvisar({ tipo: 'espera', item: it }); continue; }
       try {
         const data = await llamar(it.action, res.datos);
         if (it.action === 'abrir' && data && data.tarja) aperturasEnviadas[it.datos.op_id] = data.tarja.id;
@@ -121,6 +145,10 @@ async function sincronizar(alAvisar) {
           alAvisar && alAvisar({ tipo: 'sin_señal' });
           return false;
         }
+        // El servidor todavía no tiene la apertura de este cierre: no es un
+        // rechazo, se reintenta en la próxima sincronización.
+        if (/no llegó la apertura/i.test(e.message)) { alAvisar && alAvisar({ tipo: 'espera', item: it }); continue; }
+        await guardarRechazada(it, e.message);
         await sacarDeCola(it.id);
         alAvisar && alAvisar({ tipo: 'rechazado', item: it, error: e.message });
       }
@@ -156,4 +184,4 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) sincronizar(() => {});
 });
 
-window.API = { llamar, enviar, sincronizar, pendientesEnCola, alCambiarCola, avisar, SIN_SEÑAL };
+window.API = { llamar, enviar, sincronizar, pendientesEnCola, alCambiarCola, avisar, rechazadas, descartarRechazada, SIN_SEÑAL };
