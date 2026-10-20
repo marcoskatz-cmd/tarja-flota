@@ -97,7 +97,7 @@ function activosTarja_() {
 function rutaNomina_() {
   return {
     personas: activos_('PERSONAL').map(function (p) {
-      return { legajo: String(p.legajo || ''), nombre: String(p.nombre), equipo_habitual: String(p.equipo_habitual || '') };
+      return { legajo: String(p.legajo || ''), nombre: String(p.nombre) };
     }),
     ts: tsStr_()
   };

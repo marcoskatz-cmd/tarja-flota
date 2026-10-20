@@ -162,11 +162,10 @@ function syncEquipos_() {
 // ---------- personal ----------
 
 /**
- * Operarios de maquinaria pesada = quienes cargaron combustible en un equipo
- * pesado (código presente en EQUIPOS) en los últimos DIAS_NOMINA días, según la
- * planilla de Leandro Casares. No trae legajo: la persona se identifica por
- * nombre. Variantes de tipeo del mismo nombre se unifican y gana la más usada.
- * Se guarda el equipo de la carga más reciente para sugerírselo en la PWA.
+ * Operarios = los nombres de la columna OPERARIO de la planilla de combustible
+ * de Leandro Casares, de cargas de los últimos DIAS_NOMINA días. SOLO el
+ * nombre: no se cruza con equipos (decisión de Marcos, 20-oct-2026). No trae
+ * legajo. Variantes de tipeo del mismo nombre se unifican y gana la más usada.
  */
 function syncPersonal_() {
   var id = config_('SHEET_CASARES_ID');
@@ -181,11 +180,9 @@ function syncPersonal_() {
   }
   var h = t.header;
   var iOpe = idx_(h, ['OPERARIO', 'CHOFER']);
-  var iCod = idx_(h, ['CÓDIGO', 'CODIGO']);
   var iFec = idx_(h, ['FECHA']);
   var faltan = [];
   if (iOpe < 0) faltan.push('OPERARIO');
-  if (iCod < 0) faltan.push('CODIGO');
   if (iFec < 0) faltan.push('FECHA');
   if (faltan.length) {
     fuenteFallo_('DIAG_PERSONAL', 'A la planilla de Casares le falta la columna ' + faltan.join(', ') + '.', 'La planilla de Casares cambió');
@@ -193,8 +190,6 @@ function syncPersonal_() {
   }
   fuenteOk_('DIAG_PERSONAL');
 
-  var pesados = {};
-  leer_('EQUIPOS').forEach(function (e) { pesados[String(e.codigo).toUpperCase()] = true; });
   var dias = configNum_('DIAS_NOMINA') || 120;
   var hoy = hoyStr_();
   var d = new Date(Date.UTC(+hoy.slice(0, 4), +hoy.slice(5, 7) - 1, +hoy.slice(8, 10)) - dias * 86400000);
@@ -203,21 +198,19 @@ function syncPersonal_() {
   var porNombre = {};
   t.filas.forEach(function (f) {
     var nombre = at_(f, iOpe).replace(/\s+/g, ' ');
-    var codigo = at_(f, iCod).toUpperCase();
-    if (!nombre || !pesados[codigo]) return;
+    if (!nombre) return;
     var fecha = fechaIso_(f[iFec]);
     if (!fecha || fecha < desde) return;
     var k = normalizarTexto_(nombre);
-    var p = porNombre[k] || (porNombre[k] = { grafias: {}, ultima: '', equipo: '' });
+    var p = porNombre[k] || (porNombre[k] = { grafias: {} });
     p.grafias[nombre] = (p.grafias[nombre] || 0) + 1;
-    if (fecha >= p.ultima) { p.ultima = fecha; p.equipo = codigo; }
   });
 
   var ts = tsStr_();
   var personas = Object.keys(porNombre).map(function (k) {
     var p = porNombre[k];
     var nombre = Object.keys(p.grafias).sort(function (a, b) { return p.grafias[b] - p.grafias[a]; })[0];
-    return { legajo: '', nombre: nombre, equipo_habitual: p.equipo, activo: 'SI', ts_sync: ts };
+    return { legajo: '', nombre: nombre, activo: 'SI', ts_sync: ts };
   }).sort(function (a, b) { return a.nombre.localeCompare(b.nombre, 'es'); });
 
   // Reemplazo completo en una sola escritura: la matriz se arma entera antes

@@ -25,7 +25,7 @@ var HOJAS = {
     'lugar', 'activo_tarja', 'horom_tarja', 'origen_horom',
     'ultimo_operador', 'ultima_tarja', 'lat', 'lon', 'ts_pos', 'ts_sync'
   ],
-  PERSONAL: ['legajo', 'nombre', 'equipo_habitual', 'activo', 'ts_sync'],
+  PERSONAL: ['legajo', 'nombre', 'activo', 'ts_sync'],
   CONFIG: ['clave', 'valor'],
   CHECKLIST_ITEMS: ['orden', 'tipo', 'item', 'activo'],
   CHECKLIST_RESP: [

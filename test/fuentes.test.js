@@ -86,16 +86,15 @@ module.exports = {
     ctx.syncEquipos_();
     assert.strictEqual(ctx.prop_('DIAG_EQUIPOS'), null);
   },
-  'syncPersonal_ toma de Casares a quienes cargaron un equipo pesado en los últimos 120 días': () => {
+  'syncPersonal_ toma solo los nombres de OPERARIO de Casares (últimos 120 días), sin cruzar con equipos': () => {
     const ctx = armar();
-    ctx.syncEquipos_();
     const r = ctx.syncPersonal_();
     const p = ctx.leer_('PERSONAL');
-    // Ariel Gómez (dos grafías = una persona). Fuera: Casares (camión), Juan Viejo (hace más de 120 días), Matías (sin código).
-    assert.strictEqual(r.total, 1);
-    assert.strictEqual(p.length, 1);
-    assert.strictEqual(p[0].nombre, 'Ariel Gómez', 'gana la grafía más usada');
-    assert.strictEqual(p[0].equipo_habitual, 'EX-01', 'el equipo de la carga más reciente');
+    // Ariel Gómez (dos grafías = una persona), Leandro Casares y Matías Martín entran aunque su carga no sea de un pesado.
+    // Fuera: Juan Viejo (hace más de 120 días).
+    assert.strictEqual(r.total, 3);
+    assert.strictEqual(p.map((x) => x.nombre).join('|'), 'Ariel Gómez|Leandro Casares|Matías Martín');
+    assert.strictEqual(p[0].equipo_habitual, undefined, 'no se guarda ningún equipo');
     assert.strictEqual(String(p[0].legajo), '');
   },
   'syncPersonal_ sin SHEET_CASARES_ID deja diagnóstico': () => {
@@ -131,10 +130,9 @@ module.exports['I4: columna opcional renombrada no pisa lugar/marca con vacío y
 module.exports['I5: syncPersonal_ escribe de una sola vez (no depende de appendRow fila por fila)'] = () => {
   const ctx = armar();
   ctx.hoja_('PERSONAL').appendRow = () => { throw new Error('appendRow no debe usarse'); };
-  ctx.syncEquipos_();
   const r = ctx.syncPersonal_();
-  assert.strictEqual(r.total, 1);
-  assert.strictEqual(ctx.leer_('PERSONAL').length, 1);
+  assert.strictEqual(r.total, 3);
+  assert.strictEqual(ctx.leer_('PERSONAL').length, 3);
 };
 module.exports['I7: equipo que desaparece de la LISTA queda activo_tarja = NO'] = () => {
   const ctx = armar();

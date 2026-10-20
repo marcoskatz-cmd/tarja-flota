@@ -133,12 +133,11 @@ module.exports['probar_aviso manda un aviso de prueba y devuelve la respuesta de
   assert.ok(/prueba/i.test(ctx.__avisos[0].aviso.titulo));
 };
 
-module.exports['nomina devuelve equipo_habitual'] = () => {
+module.exports['nomina devuelve solo nombres, sin equipo asociado'] = () => {
   const ctx = armar();
-  ctx.ss_().getSheetByName('PERSONAL').filas.length = 1;
-  ctx.agregar_('PERSONAL', { legajo: '', nombre: 'Ariel Gómez', equipo_habitual: 'CF-03', activo: 'SI' });
   const r = post(ctx, { action: 'nomina' });
-  assert.strictEqual(r.data.personas[0].equipo_habitual, 'CF-03');
+  assert.strictEqual(r.data.personas[0].equipo_habitual, undefined);
+  assert.ok(r.data.personas[0].nombre);
 };
 module.exports['publico_mapa no pide sesión y trae solo equipos con posición'] = () => {
   const ctx = armar();
