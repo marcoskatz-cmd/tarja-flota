@@ -123,3 +123,12 @@ module.exports['set_config escribe una clave de CONFIG solo con la clave de inst
   assert.strictEqual(ctx.leer_('CONFIG').find((c) => c.clave === 'SHEET_ROPA_ID').valor, 'ropa123');
   assert.strictEqual(get(ctx, { action: 'set_config', key: 'k', clave: 'INEXISTENTE', valor: '1' }).ok, false, 'solo claves conocidas');
 };
+
+module.exports['probar_aviso manda un aviso de prueba y devuelve la respuesta del canal'] = () => {
+  const ctx = armar();
+  ctx.setProp_('BOOTSTRAP_KEY', 'k');
+  const r = get(ctx, { action: 'probar_aviso', key: 'k' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(ctx.__avisos.length, 1);
+  assert.ok(/prueba/i.test(ctx.__avisos[0].aviso.titulo));
+};

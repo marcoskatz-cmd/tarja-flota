@@ -45,6 +45,14 @@ function doGet(e) {
       case 'borrar_tarja': return json_({ ok: true, data: borrarTarja_(p.equipo, p.fecha, aplicar) });
       case 'recalcular_horometros': return json_({ ok: true, data: recalcularHorometros_(aplicar) });
       case 'diagnostico': return json_({ ok: true, data: diagnosticar_() });
+      case 'probar_aviso': {
+        var resp = notificarAppIngeco_(CFG.MODULO, {
+          destinatarios: [{ con_modulo: CFG.MODULO }], tipo: 'aviso_general', prioridad: 'normal',
+          titulo: 'Prueba de avisos de la tarja', cuerpo: 'Enviado desde el backend de la tarja a las ' + tsStr_(),
+          url_destino: CFG.URL_PANEL, clave_unica: 'prueba-tarja-' + tsStr_()
+        });
+        return json_({ ok: true, data: { respuesta: resp, tiene_clave: !!prop_('CLAVE_' + CFG.MODULO) } });
+      }
       case 'set_config': {
         // Solo claves que existen en la semilla de CONFIG: nada de inventar claves por URL.
         var conocidas = SEED.CONFIG.map(function (r) { return r[0]; });
