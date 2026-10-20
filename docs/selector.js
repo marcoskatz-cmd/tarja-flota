@@ -52,7 +52,10 @@
 
     function pintar() {
       const q = normalizarTexto_(buscar.value);
-      cajas.innerHTML = grupos.map((g) => {
+      // El equipo donde más recientemente cargó combustible (planilla de Casares) va primero.
+    const yo = (window.Identidad && Identidad.actual()) || {};
+    const habitual = !q && yo.equipo_habitual ? Datos.equipo(yo.equipo_habitual) : null;
+    cajas.innerHTML = (habitual ? `<h3 class="grupo">Tu equipo de siempre</h3>${tarjeta(habitual, d.hoy)}` : '') + grupos.map((g) => {
         const eqs = g.equipos.filter((e) => !q || normalizarTexto_([e.codigo, e.descripcion, e.patente, e.lugar].join(' ')).indexOf(q) >= 0);
         if (!eqs.length) return '';
         return `<h3 class="grupo">${esc(g.lugar)}</h3>${eqs.map((e) => tarjeta(e, d.hoy)).join('')}`;

@@ -231,3 +231,10 @@ module.exports['I3: cierre con más de MAX horas se acepta solo con confirmació
   assert.strictEqual(t.excepcion, 'SI');
   assert.ok(ctx.leer_('LOG').some((l) => l.accion === 'EXCESO_HORAS'));
 };
+
+module.exports['operario de la lista sin legajo (Casares) no queda marcado como manual'] = () => {
+  const ctx = armar();
+  abrir(ctx, { legajo: '', operador: 'Ariel Gómez' });
+  assert.strictEqual(ctx.leer_('TARJAS_2026')[0].operador_manual, 'NO');
+  assert.strictEqual(ctx.leer_('OPERADORES_MANUALES').length, 0);
+};

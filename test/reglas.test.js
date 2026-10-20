@@ -78,3 +78,11 @@ module.exports['inferirTipoRodado_: cargador frontal (masculino) → rodante, te
   assert.strictEqual(ctx.inferirTipoRodado_('Terminadora de asfalto', 'Dynapac F2500C'), 'oruga');
   assert.strictEqual(ctx.inferirTipoRodado_('Retropala', 'CAT 416E'), 'rodante');
 };
+
+module.exports['fechaIso_: dd/mm/yyyy, yyyy-mm-dd, Date y basura'] = () => {
+  assert.strictEqual(ctx.fechaIso_('15/05/2026'), '2026-05-15');
+  assert.strictEqual(ctx.fechaIso_('2026-10-01'), '2026-10-01');
+  assert.strictEqual(ctx.fechaIso_(new Date(2026, 9, 3)), '2026-10-03');
+  assert.strictEqual(ctx.fechaIso_(''), '');
+  assert.strictEqual(ctx.fechaIso_('mañana'), '');
+};

@@ -132,3 +132,37 @@ module.exports['probar_aviso manda un aviso de prueba y devuelve la respuesta de
   assert.strictEqual(ctx.__avisos.length, 1);
   assert.ok(/prueba/i.test(ctx.__avisos[0].aviso.titulo));
 };
+
+module.exports['nomina devuelve equipo_habitual'] = () => {
+  const ctx = armar();
+  ctx.ss_().getSheetByName('PERSONAL').filas.length = 1;
+  ctx.agregar_('PERSONAL', { legajo: '', nombre: 'Ariel Gómez', equipo_habitual: 'CF-03', activo: 'SI' });
+  const r = post(ctx, { action: 'nomina' });
+  assert.strictEqual(r.data.personas[0].equipo_habitual, 'CF-03');
+};
+module.exports['publico_mapa no pide sesión y trae solo equipos con posición'] = () => {
+  const ctx = armar();
+  ctx.actualizar_('EQUIPOS', ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03')._fila, { lat: -26.8, lon: -65.2, ts_pos: '2026-10-19 10:00:00' });
+  const r = post(ctx, { action: 'publico_mapa' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.data.puntos.length, 1);
+  assert.strictEqual(r.data.puntos[0].codigo, 'CF-03');
+};
+module.exports['publico_tarjas no pide sesión, trae las últimas tarjas no anuladas y las fallas abiertas'] = () => {
+  const ctx = armar();
+  const FOTO = 'data:image/jpeg;base64,AAAA';
+  const items = post(ctx, { action: 'estado', equipo: 'CF-03' }).data.items.map((i) => ({ orden: i.orden, estado: 'OK' }));
+  items[0] = { orden: items[0].orden, estado: 'PROBLEMA', foto: FOTO, comentario: 'Pierde aceite' };
+  const a = post(ctx, { action: 'abrir', equipo: 'CF-03', legajo: '', operador: 'Ariel Gómez', firma: FOTO, foto_horometro: FOTO, horom_ini: 4800, checklist: items, op_id: 'o1' });
+  post(ctx, { action: 'cerrar', tarja_id: a.data.tarja.id, foto_horometro: FOTO, horom_fin: 4806, operador: 'Ariel Gómez', op_id: 'c1' });
+  const r = post(ctx, { action: 'publico_tarjas', codigo: 'cf-03' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.data.tarjas.length, 1);
+  const t = r.data.tarjas[0];
+  assert.strictEqual(t.operador, 'Ariel Gómez');
+  assert.strictEqual(Number(t.horas), 6);
+  assert.strictEqual(r.data.fallas.length, 1);
+  assert.strictEqual(r.data.fallas[0].item.length > 0, true);
+  assert.strictEqual(r.data.horom_tarja, 4806);
+  assert.strictEqual(post(ctx, { action: 'publico_tarjas', codigo: 'NO-EXISTE' }).ok, false);
+};

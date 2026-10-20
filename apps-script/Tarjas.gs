@@ -163,7 +163,8 @@ function abrirTarja_(p) {
 
     var operador = String(p.operador || '').trim();
     var legajo = String(p.legajo || '').trim();
-    var manual = !!p.operador_manual || !legajo;
+    // Los operarios de Casares no tienen legajo: manual es solo quien escribió su nombre.
+    var manual = !!p.operador_manual;
     if (operador.length < 3) throw new Error('Falta el nombre del operario.');
     if (!p.firma) throw new Error('Falta la firma del operario.');
     if (!p.foto_horometro) throw new Error('Falta la foto del horómetro.');

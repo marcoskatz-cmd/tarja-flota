@@ -114,3 +114,18 @@ function textoUltimaTarja_(ultima, hoy, operador) {
   var cuando = dias <= 0 ? 'Hoy' : dias === 1 ? 'Ayer' : 'Hace ' + dias + ' días';
   return cuando + (operador ? ' · ' + operador : '');
 }
+
+/** Fecha de planilla a 'yyyy-MM-dd'. Acepta Date, 'dd/mm/yyyy' y 'yyyy-mm-dd'; si no, ''. */
+function fechaIso_(v) {
+  var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+  if (v instanceof Date || (v && typeof v.getFullYear === 'function')) {
+    if (isNaN(v.getTime())) return '';
+    return v.getFullYear() + '-' + p2(v.getMonth() + 1) + '-' + p2(v.getDate());
+  }
+  var t = String(v == null ? '' : v).trim();
+  var m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return m[3] + '-' + p2(+m[2]) + '-' + p2(+m[1]);
+  m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  return '';
+}

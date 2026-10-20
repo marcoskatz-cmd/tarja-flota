@@ -161,45 +161,73 @@ function syncEquipos_() {
 
 // ---------- personal ----------
 
+/**
+ * Operarios de maquinaria pesada = quienes cargaron combustible en un equipo
+ * pesado (código presente en EQUIPOS) en los últimos DIAS_NOMINA días, según la
+ * planilla de Leandro Casares. No trae legajo: la persona se identifica por
+ * nombre. Variantes de tipeo del mismo nombre se unifican y gana la más usada.
+ * Se guarda el equipo de la carga más reciente para sugerírselo en la PWA.
+ */
 function syncPersonal_() {
-  var id = config_('SHEET_ROPA_ID');
+  var id = config_('SHEET_CASARES_ID');
   if (!id) {
-    fuenteFallo_('DIAG_PERSONAL', 'Falta cargar SHEET_ROPA_ID en la hoja CONFIG.', 'La nómina no está conectada');
-    return { total: 0, faltan: ['SHEET_ROPA_ID'] };
+    fuenteFallo_('DIAG_PERSONAL', 'Falta cargar SHEET_CASARES_ID en la hoja CONFIG.', 'La lista de operarios no está conectada');
+    return { total: 0, faltan: ['SHEET_CASARES_ID'] };
   }
-  var t = leerPestana_(id, ['PERSONAL']);
+  var t = leerPestana_(id, ['ENTREGAS']);
   if (!t) {
-    fuenteFallo_('DIAG_PERSONAL', 'No se pudo leer la hoja PERSONAL de Ropa INGECO.', 'La nómina no se pudo leer');
-    return { total: 0, faltan: ['PESTAÑA PERSONAL'] };
+    fuenteFallo_('DIAG_PERSONAL', 'No se pudo leer la pestaña ENTREGAS de la planilla de combustible de Casares.', 'La lista de operarios no se pudo leer');
+    return { total: 0, faltan: ['PESTAÑA ENTREGAS'] };
   }
   var h = t.header;
-  var iLeg = idx_(h, ['LEGAJO']);
-  var iNom = idx_(h, ['NOMBRE', 'APELLIDO Y NOMBRE', 'NOMBRE Y APELLIDO']);
-  var iAct = idx_(h, ['ACTIVO', 'ESTADO']);
+  var iOpe = idx_(h, ['OPERARIO', 'CHOFER']);
+  var iCod = idx_(h, ['CÓDIGO', 'CODIGO']);
+  var iFec = idx_(h, ['FECHA']);
   var faltan = [];
-  if (iLeg < 0) faltan.push('LEGAJO');
-  if (iNom < 0) faltan.push('NOMBRE');
+  if (iOpe < 0) faltan.push('OPERARIO');
+  if (iCod < 0) faltan.push('CODIGO');
+  if (iFec < 0) faltan.push('FECHA');
   if (faltan.length) {
-    fuenteFallo_('DIAG_PERSONAL', 'A la hoja PERSONAL de Ropa le falta la columna ' + faltan.join(', ') + '.', 'La nómina cambió');
+    fuenteFallo_('DIAG_PERSONAL', 'A la planilla de Casares le falta la columna ' + faltan.join(', ') + '.', 'La planilla de Casares cambió');
     return { total: 0, faltan: faltan };
   }
   fuenteOk_('DIAG_PERSONAL');
-  var ts = tsStr_();
-  var activos = t.filas.filter(function (f) {
-    // Ropa escribe "SÍ" con tilde: comparar normalizado.
-    var a = normalizarTexto_(at_(f, iAct));
-    return at_(f, iLeg) && at_(f, iNom) && (iAct < 0 || a === 'SI' || a === 'ACTIVO' || a === 'TRUE' || a === '1');
-  }).map(function (f) {
-    return { legajo: at_(f, iLeg), nombre: at_(f, iNom), activo: 'SI', ts_sync: ts };
+
+  var pesados = {};
+  leer_('EQUIPOS').forEach(function (e) { pesados[String(e.codigo).toUpperCase()] = true; });
+  var dias = configNum_('DIAS_NOMINA') || 120;
+  var hoy = hoyStr_();
+  var d = new Date(Date.UTC(+hoy.slice(0, 4), +hoy.slice(5, 7) - 1, +hoy.slice(8, 10)) - dias * 86400000);
+  var desde = d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
+
+  var porNombre = {};
+  t.filas.forEach(function (f) {
+    var nombre = at_(f, iOpe).replace(/\s+/g, ' ');
+    var codigo = at_(f, iCod).toUpperCase();
+    if (!nombre || !pesados[codigo]) return;
+    var fecha = fechaIso_(f[iFec]);
+    if (!fecha || fecha < desde) return;
+    var k = normalizarTexto_(nombre);
+    var p = porNombre[k] || (porNombre[k] = { grafias: {}, ultima: '', equipo: '' });
+    p.grafias[nombre] = (p.grafias[nombre] || 0) + 1;
+    if (fecha >= p.ultima) { p.ultima = fecha; p.equipo = codigo; }
   });
+
+  var ts = tsStr_();
+  var personas = Object.keys(porNombre).map(function (k) {
+    var p = porNombre[k];
+    var nombre = Object.keys(p.grafias).sort(function (a, b) { return p.grafias[b] - p.grafias[a]; })[0];
+    return { legajo: '', nombre: nombre, equipo_habitual: p.equipo, activo: 'SI', ts_sync: ts };
+  }).sort(function (a, b) { return a.nombre.localeCompare(b.nombre, 'es'); });
+
   // Reemplazo completo en una sola escritura: la matriz se arma entera antes
-  // de tocar la hoja, así un corte a mitad no deja la nómina vacía.
+  // de tocar la hoja, así un corte a mitad no deja la lista vacía.
   var sh = hoja_('PERSONAL');
   var enc = HOJAS.PERSONAL;
-  var matriz = [enc].concat(activos.map(function (p) { return enc.map(function (c) { return p[c] === undefined ? '' : p[c]; }); }));
+  var matriz = [enc].concat(personas.map(function (p) { return enc.map(function (c) { return p[c] === undefined ? '' : p[c]; }); }));
   sh.clearContents();
   sh.getRange(1, 1, matriz.length, enc.length).setValues(matriz);
-  return { total: activos.length, faltan: [] };
+  return { total: personas.length, faltan: [] };
 }
 
 // ---------- horómetro inicial ----------

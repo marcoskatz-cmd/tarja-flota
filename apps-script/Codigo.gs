@@ -96,7 +96,9 @@ function activosTarja_() {
 
 function rutaNomina_() {
   return {
-    personas: activos_('PERSONAL').map(function (p) { return { legajo: String(p.legajo), nombre: String(p.nombre) }; }),
+    personas: activos_('PERSONAL').map(function (p) {
+      return { legajo: String(p.legajo || ''), nombre: String(p.nombre), equipo_habitual: String(p.equipo_habitual || '') };
+    }),
     ts: tsStr_()
   };
 }
@@ -131,7 +133,38 @@ function rutaItems_() {
   };
 }
 
+/**
+ * Para el panel de INGECOV (estático, sin sesión de la tarja): última posición
+ * de cada equipo y el historial de tarjas de uno. Solo lectura, sin firmas.
+ */
+function rutaPublicoMapa_() { return panelMapa_(); }
+
+function rutaPublicoTarjas_(p) {
+  var e = equipoPorCodigo_(p.codigo);
+  var max = Math.min(Number(p.max) || 30, 100);
+  var tarjas = tarjasDe_(e.codigo).filter(function (t) { return String(t.estado) !== 'anulada'; }).slice(0, max)
+    .map(function (t) {
+      return {
+        fecha: String(t.fecha), operador: t.operador, obra: t.obra, estado: t.estado,
+        horom_ini: t.horom_ini, horom_fin: t.horom_fin, horas: t.horas,
+        ts_apertura: t.ts_apertura, ts_cierre: t.ts_cierre, cierre_tercero: t.cierre_tercero, excepcion: t.excepcion,
+        foto_horom_ini: t.foto_horom_ini, foto_horom_fin: t.foto_horom_fin
+      };
+    });
+  var fallas = leer_('PENDIENTES').filter(function (x) {
+    return String(x.equipo).toUpperCase() === String(e.codigo).toUpperCase() && String(x.estado) === 'abierto';
+  }).map(function (x) { return { fecha: String(x.fecha_apertura), item: x.item, comentario: x.comentario, foto: x.foto }; });
+  return {
+    codigo: e.codigo, horom_tarja: e.horom_tarja === '' ? null : Number(e.horom_tarja),
+    ultima_tarja: String(e.ultima_tarja || ''), ultimo_operador: String(e.ultimo_operador || ''),
+    lat: e.lat === '' ? null : Number(e.lat), lon: e.lon === '' ? null : Number(e.lon), ts_pos: String(e.ts_pos || ''),
+    tarjas: tarjas, fallas: fallas
+  };
+}
+
 var RUTAS_PUBLICAS = {
+  publico_mapa: rutaPublicoMapa_,
+  publico_tarjas: rutaPublicoTarjas_,
   nomina: rutaNomina_,
   equipos: rutaEquipos_,
   items: rutaItems_,

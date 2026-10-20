@@ -2,7 +2,7 @@ const assert = require('assert');
 const { crearContexto, cargarHoja, spreadsheetFake } = require('./helpers');
 
 const LISTA_ID = '1EwbNlmBMx3OIviplvHSJM3N4CZ3vVXgVxH208VugG3M';
-const ROPA_ID = 'ropa1';
+const CASARES_ID = 'casares1';
 const SNAP_ID = 'snap1';
 
 function armar(opciones) {
@@ -18,10 +18,17 @@ function armar(opciones) {
     ['EX-01', 'EXCAVADORA HIDRAULICA', 'KOMATSU', 'PC200', 'S/N 1', 'Corrientes'],
     ['CMN-03', 'CAMION VOLCADOR', 'IVECO', 'TECTOR', 'AC456', 'Autovías']
   ]);
-  // Fuente Ropa
-  const ropa = spreadsheetFake(ROPA_ID, 'Ropa');
-  ctx.__planillas[ROPA_ID] = ropa;
-  cargarHoja(ropa, 'PERSONAL', ['LEGAJO', 'APELLIDO Y NOMBRE', 'ACTIVO'], [[101, 'PÉREZ JUAN', 'SÍ'], [102, 'GÓMEZ ANA', 'NO']]);
+  // Fuente Casares (combustible pesados): OPERARIO + CÓDIGO de cada carga
+  const cas = spreadsheetFake(CASARES_ID, 'Casares');
+  ctx.__planillas[CASARES_ID] = cas;
+  cargarHoja(cas, 'ENTREGAS', ['FECHA', 'OPERARIO', 'EQUIPO/SECTOR', 'CÓDIGO', 'N° SERIE/PATENTE'], opciones.cargas || [
+    ['15/05/2026', 'Ariel Gómez', 'CF-03 — Cargador', 'CF-03', ''],
+    ['10/10/2026', 'Ariel Gómez', 'CF-03 — Cargador', 'CF-03', ''],
+    ['12/10/2026', 'ariel gomez', 'EX-01 — Excavadora', 'EX-01', ''],
+    ['11/10/2026', 'Leandro Casares', 'CMN-03 — Camión', 'CMN-03', ''],
+    ['01/02/2026', 'Juan Viejo', 'CF-03 — Cargador', 'CF-03', ''],
+    ['09/10/2026', 'Matías Martín', 'Camión batea', '', 'HYG-770']
+  ]);
   // Snapshot INGECOV (planilla)
   const snap = spreadsheetFake(SNAP_ID, 'snapshot');
   ctx.__planillas[SNAP_ID] = snap;
@@ -30,7 +37,7 @@ function armar(opciones) {
   // CONFIG
   const cfg = ctx.ss_().getSheetByName('CONFIG');
   cfg.filas.forEach((f) => {
-    if (f[0] === 'SHEET_ROPA_ID') f[1] = ROPA_ID;
+    if (f[0] === 'SHEET_CASARES_ID') f[1] = CASARES_ID;
     if (f[0] === 'SNAPSHOT_SHEET_ID') f[1] = SNAP_ID;
   });
   return ctx;
@@ -79,18 +86,21 @@ module.exports = {
     ctx.syncEquipos_();
     assert.strictEqual(ctx.prop_('DIAG_EQUIPOS'), null);
   },
-  'syncPersonal_ trae solo activos de la hoja PERSONAL de Ropa': () => {
+  'syncPersonal_ toma de Casares a quienes cargaron un equipo pesado en los últimos 120 días': () => {
     const ctx = armar();
+    ctx.syncEquipos_();
     const r = ctx.syncPersonal_();
-    assert.strictEqual(r.total, 1);
     const p = ctx.leer_('PERSONAL');
+    // Ariel Gómez (dos grafías = una persona). Fuera: Casares (camión), Juan Viejo (hace más de 120 días), Matías (sin código).
+    assert.strictEqual(r.total, 1);
     assert.strictEqual(p.length, 1);
-    assert.strictEqual(String(p[0].legajo), '101');
-    assert.strictEqual(p[0].nombre, 'PÉREZ JUAN');
+    assert.strictEqual(p[0].nombre, 'Ariel Gómez', 'gana la grafía más usada');
+    assert.strictEqual(p[0].equipo_habitual, 'EX-01', 'el equipo de la carga más reciente');
+    assert.strictEqual(String(p[0].legajo), '');
   },
-  'syncPersonal_ sin SHEET_ROPA_ID deja diagnóstico': () => {
+  'syncPersonal_ sin SHEET_CASARES_ID deja diagnóstico': () => {
     const ctx = armar();
-    ctx.ss_().getSheetByName('CONFIG').filas.forEach((f) => { if (f[0] === 'SHEET_ROPA_ID') f[1] = ''; });
+    ctx.ss_().getSheetByName('CONFIG').filas.forEach((f) => { if (f[0] === 'SHEET_CASARES_ID') f[1] = ''; });
     const r = ctx.syncPersonal_();
     assert.ok(r.faltan.length > 0);
     assert.ok(ctx.prop_('DIAG_PERSONAL'));
@@ -121,6 +131,7 @@ module.exports['I4: columna opcional renombrada no pisa lugar/marca con vacío y
 module.exports['I5: syncPersonal_ escribe de una sola vez (no depende de appendRow fila por fila)'] = () => {
   const ctx = armar();
   ctx.hoja_('PERSONAL').appendRow = () => { throw new Error('appendRow no debe usarse'); };
+  ctx.syncEquipos_();
   const r = ctx.syncPersonal_();
   assert.strictEqual(r.total, 1);
   assert.strictEqual(ctx.leer_('PERSONAL').length, 1);

@@ -25,7 +25,7 @@ var HOJAS = {
     'lugar', 'activo_tarja', 'horom_tarja', 'origen_horom',
     'ultimo_operador', 'ultima_tarja', 'lat', 'lon', 'ts_pos', 'ts_sync'
   ],
-  PERSONAL: ['legajo', 'nombre', 'activo', 'ts_sync'],
+  PERSONAL: ['legajo', 'nombre', 'equipo_habitual', 'activo', 'ts_sync'],
   CONFIG: ['clave', 'valor'],
   CHECKLIST_ITEMS: ['orden', 'tipo', 'item', 'activo'],
   CHECKLIST_RESP: [
@@ -76,6 +76,8 @@ var SEED = {
     ['HORAS_ABIERTA_AVISO', 16],
     ['DIAS_SIN_ACTIVIDAD', 7],
     ['SHEET_ROPA_ID', ''],
+    ['SHEET_CASARES_ID', '19eyY8MImPM_-Gyzj8QcqA_yR5KDrkuu-1faJUU48N1A'],
+    ['DIAS_NOMINA', 120],
     ['SHEET_LISTA_EQUIPOS_ID', '1EwbNlmBMx3OIviplvHSJM3N4CZ3vVXgVxH208VugG3M'],
     ['INGECOV_SNAPSHOT_URL', ''],
     ['SNAPSHOT_SHEET_ID', '']

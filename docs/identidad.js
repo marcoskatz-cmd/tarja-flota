@@ -44,11 +44,11 @@
       const q = buscar.value.trim();
       const r = q ? buscarNomina_(personas, q) : [];
       lista.innerHTML = r.length
-        ? r.map((p) => `<button class="opcion" data-legajo="${esc(p.legajo)}" data-nombre="${esc(p.nombre)}">${esc(p.nombre)}<span class="tenue"> · ${esc(p.legajo)}</span></button>`).join('')
+        ? r.map((p) => `<button class="opcion" data-legajo="${esc(p.legajo)}" data-nombre="${esc(p.nombre)}" data-eq="${esc(p.equipo_habitual || '')}">${esc(p.nombre)}${p.equipo_habitual ? `<span class="tenue"> · ${esc(p.equipo_habitual)}</span>` : ''}</button>`).join('')
         : (q ? '<div class="tenue" style="padding:.6rem 0">No aparece nadie con ese apellido. Probá con menos letras o tocá "No estoy en la lista".</div>' : '');
       lista.querySelectorAll('.opcion').forEach((b) => {
         b.onclick = () => {
-          const id = { legajo: b.dataset.legajo, nombre: b.dataset.nombre, manual: false };
+          const id = { legajo: b.dataset.legajo, nombre: b.dataset.nombre, equipo_habitual: b.dataset.eq || '', manual: false };
           guardar(id);
           alElegir(id);
         };
