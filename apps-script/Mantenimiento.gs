@@ -50,9 +50,12 @@ function borrarTarja_(codigo, fecha, aplicar) {
   });
 
   var recalculado = horomSegunTarjas_(equipo.codigo);
+  var pos = posicionSegunTarjas_(equipo.codigo);
   actualizar_('EQUIPOS', equipo._fila, {
     horom_tarja: recalculado === null ? horomPrevio : recalculado,
-    origen_horom: recalculado === null ? String(equipo.origen_horom || 'TARJA') : 'TARJA'
+    origen_horom: recalculado === null ? String(equipo.origen_horom || 'TARJA') : 'TARJA',
+    // La posición del mapa vuelve a la última tarja que quede con GPS (o se vacía).
+    lat: pos ? pos.lat : '', lon: pos ? pos.lon : '', ts_pos: pos ? pos.ts : ''
   });
 
   log_('mantenimiento', 'BORRADO_TARJA',
@@ -74,6 +77,24 @@ function horomSegunTarjas_(codigo) {
     });
   });
   return mejor ? Number(mejor.horom_fin) : null;
+}
+
+/** Última posición GPS registrada en las tarjas del equipo, o null. */
+function posicionSegunTarjas_(codigo) {
+  var c = String(codigo).toUpperCase();
+  var mejor = null;
+  ss_().getSheets().forEach(function (sh) {
+    if (!/^TARJAS_\d{4}$/.test(sh.getName())) return;
+    leer_(sh.getName()).forEach(function (t) {
+      if (String(t.equipo).toUpperCase() !== c || String(t.estado) === 'anulada') return;
+      var cands = [[t.lat_fin, t.lon_fin, t.ts_cierre], [t.lat, t.lon, t.ts_apertura]];
+      cands.forEach(function (k) {
+        if (!gpsValido_(k[0], k[1]) || !k[2]) return;
+        if (!mejor || String(k[2]) > mejor.ts) mejor = { lat: Number(k[0]), lon: Number(k[1]), ts: String(k[2]) };
+      });
+    });
+  });
+  return mejor;
 }
 
 /** Borra de abajo hacia arriba para que no se corran los números de fila. */
@@ -102,5 +123,15 @@ function recalcularHorometros_(aplicar) {
     actualizar_('EQUIPOS', c._fila, { horom_tarja: c.correcto, origen_horom: 'TARJA' });
     log_('mantenimiento', 'RECALCULO_HOROMETRO', c.codigo + ': ' + c.actual + ' -> ' + c.correcto, 'según tarjas');
   });
-  return { simulacion: false, corregidos: cambios.length };
+  // Posiciones del mapa: cada equipo vuelve a la última que respaldan sus tarjas.
+  var posiciones = 0;
+  leer_('EQUIPOS').forEach(function (e) {
+    var pos = posicionSegunTarjas_(e.codigo);
+    var lat = pos ? pos.lat : '', lon = pos ? pos.lon : '', ts = pos ? pos.ts : '';
+    if (String(e.lat) !== String(lat) || String(e.lon) !== String(lon)) {
+      actualizar_('EQUIPOS', e._fila, { lat: lat, lon: lon, ts_pos: ts });
+      posiciones++;
+    }
+  });
+  return { simulacion: false, corregidos: cambios.length, posiciones: posiciones };
 }

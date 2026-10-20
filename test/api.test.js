@@ -166,3 +166,27 @@ module.exports['publico_tarjas no pide sesión, trae las últimas tarjas no anul
   assert.strictEqual(r.data.horom_tarja, 4806);
   assert.strictEqual(post(ctx, { action: 'publico_tarjas', codigo: 'NO-EXISTE' }).ok, false);
 };
+
+module.exports['borrar_tarja limpia la posición que había dejado la tarja borrada'] = () => {
+  const ctx = armar();
+  ctx.setProp_('BOOTSTRAP_KEY', 'k');
+  const FOTO = 'data:image/jpeg;base64,AAAA';
+  const items = post(ctx, { action: 'estado', equipo: 'CF-03' }).data.items.map((i) => ({ orden: i.orden, estado: 'OK' }));
+  post(ctx, { action: 'abrir', equipo: 'CF-03', operador: 'Prueba', firma: FOTO, foto_horometro: FOTO, horom_ini: 4800, checklist: items, lat: -26.8, lon: -65.2, op_id: 'o1' });
+  assert.strictEqual(Number(ctx.leer_('EQUIPOS').find((e) => e.codigo === 'CF-03').lat), -26.8);
+  get(ctx, { action: 'borrar_tarja', key: 'k', equipo: 'CF-03', fecha: '2026-10-19', aplicar: 'si' });
+  const e = ctx.leer_('EQUIPOS').find((x) => x.codigo === 'CF-03');
+  assert.strictEqual(String(e.lat), '');
+  assert.strictEqual(String(e.ts_pos), '');
+};
+
+module.exports['recalcular_horometros también vacía posiciones sin tarja que las respalde'] = () => {
+  const ctx = armar();
+  ctx.setProp_('BOOTSTRAP_KEY', 'k');
+  const e = ctx.leer_('EQUIPOS').find((x) => x.codigo === 'CF-03');
+  ctx.actualizar_('EQUIPOS', e._fila, { lat: -26.8, lon: -65.2, ts_pos: '2026-10-19 10:00:00' });
+  const r = get(ctx, { action: 'recalcular_horometros', key: 'k', aplicar: 'si' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(String(ctx.leer_('EQUIPOS').find((x) => x.codigo === 'CF-03').lat), '');
+  assert.strictEqual(r.data.posiciones, 1);
+};
