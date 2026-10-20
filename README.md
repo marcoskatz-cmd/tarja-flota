@@ -49,7 +49,7 @@ Front: commit + push a `main`; Pages sirve `docs/`. Al tocar CSS/JS subir `?v=N`
 
 ## Instalación (una sola vez)
 
-1. Autorizar los permisos del script: abrir el editor, ejecutar cualquier función (p. ej. `instalarTriggers`) y aceptar.
+1. Autorizar la web app: abrir `<exec>?action=ping` logueado como el dueño y aceptar los permisos (hay que repetirlo si cambian los `oauthScopes` del manifiesto).
 2. `GET <exec>?action=setup` → crea planilla, carpeta de fotos y hojas; devuelve `bootstrap_key` (guardarla, es la clave de mantenimiento).
 3. En la hoja `CONFIG`: cargar `SHEET_ROPA_ID` (Script Property `SHEET_ID` del proyecto de Ropa) y `SNAPSHOT_SHEET_ID` o `INGECOV_SNAPSHOT_URL`.
 4. `GET <exec>?action=sync_fuentes&key=<clave>` → `?action=sembrar_horometros&key=` → `?action=instalar_triggers&key=`.
