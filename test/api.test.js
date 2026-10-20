@@ -178,14 +178,18 @@ module.exports['borrar_tarja limpia la posición que había dejado la tarja borr
   const e = ctx.leer_('EQUIPOS').find((x) => x.codigo === 'CF-03');
   assert.strictEqual(String(e.lat), '');
   assert.strictEqual(String(e.ts_pos), '');
+  // Sin tarjas que lo respalden, el "último operario" queda vacío (no se inventa).
+  assert.strictEqual(String(e.ultimo_operador), '');
+  assert.strictEqual(String(e.ultima_tarja), '');
 };
 
 module.exports['recalcular_horometros también vacía posiciones sin tarja que las respalde'] = () => {
   const ctx = armar();
   ctx.setProp_('BOOTSTRAP_KEY', 'k');
   const e = ctx.leer_('EQUIPOS').find((x) => x.codigo === 'CF-03');
-  ctx.actualizar_('EQUIPOS', e._fila, { lat: -26.8, lon: -65.2, ts_pos: '2026-10-19 10:00:00' });
+  ctx.actualizar_('EQUIPOS', e._fila, { lat: -26.8, lon: -65.2, ts_pos: '2026-10-19 10:00:00', ultimo_operador: 'PRUEBA', ultima_tarja: '2026-10-20' });
   const r = get(ctx, { action: 'recalcular_horometros', key: 'k', aplicar: 'si' });
+  assert.strictEqual(String(ctx.leer_('EQUIPOS').find((x) => x.codigo === 'CF-03').ultimo_operador), '');
   assert.strictEqual(r.ok, true);
   assert.strictEqual(String(ctx.leer_('EQUIPOS').find((x) => x.codigo === 'CF-03').lat), '');
   assert.strictEqual(r.data.posiciones, 1);

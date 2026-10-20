@@ -51,11 +51,13 @@ function borrarTarja_(codigo, fecha, aplicar) {
 
   var recalculado = horomSegunTarjas_(equipo.codigo);
   var pos = posicionSegunTarjas_(equipo.codigo);
+  var ult = ultimaSegunTarjas_(equipo.codigo);
   actualizar_('EQUIPOS', equipo._fila, {
     horom_tarja: recalculado === null ? horomPrevio : recalculado,
     origen_horom: recalculado === null ? String(equipo.origen_horom || 'TARJA') : 'TARJA',
     // La posición del mapa vuelve a la última tarja que quede con GPS (o se vacía).
-    lat: pos ? pos.lat : '', lon: pos ? pos.lon : '', ts_pos: pos ? pos.ts : ''
+    lat: pos ? pos.lat : '', lon: pos ? pos.lon : '', ts_pos: pos ? pos.ts : '',
+    ultimo_operador: ult ? ult.operador : '', ultima_tarja: ult ? ult.fecha : ''
   });
 
   log_('mantenimiento', 'BORRADO_TARJA',
@@ -97,6 +99,20 @@ function posicionSegunTarjas_(codigo) {
   return mejor;
 }
 
+/** Fecha y operario de la última tarja no anulada del equipo, o null. */
+function ultimaSegunTarjas_(codigo) {
+  var c = String(codigo).toUpperCase();
+  var mejor = null;
+  ss_().getSheets().forEach(function (sh) {
+    if (!/^TARJAS_\d{4}$/.test(sh.getName())) return;
+    leer_(sh.getName()).forEach(function (t) {
+      if (String(t.equipo).toUpperCase() !== c || String(t.estado) === 'anulada') return;
+      if (!mejor || String(t.ts_apertura) > mejor.ts) mejor = { ts: String(t.ts_apertura), fecha: String(t.fecha), operador: String(t.operador) };
+    });
+  });
+  return mejor;
+}
+
 /** Borra de abajo hacia arriba para que no se corran los números de fila. */
 function borrarFilas_(nombre, filas) {
   if (!filas.length) return;
@@ -127,9 +143,12 @@ function recalcularHorometros_(aplicar) {
   var posiciones = 0;
   leer_('EQUIPOS').forEach(function (e) {
     var pos = posicionSegunTarjas_(e.codigo);
+    var ult = ultimaSegunTarjas_(e.codigo);
     var lat = pos ? pos.lat : '', lon = pos ? pos.lon : '', ts = pos ? pos.ts : '';
-    if (String(e.lat) !== String(lat) || String(e.lon) !== String(lon)) {
-      actualizar_('EQUIPOS', e._fila, { lat: lat, lon: lon, ts_pos: ts });
+    var op = ult ? ult.operador : '', fe = ult ? ult.fecha : '';
+    if (String(e.lat) !== String(lat) || String(e.lon) !== String(lon) ||
+        String(e.ultimo_operador) !== op || String(e.ultima_tarja) !== fe) {
+      actualizar_('EQUIPOS', e._fila, { lat: lat, lon: lon, ts_pos: ts, ultimo_operador: op, ultima_tarja: fe });
       posiciones++;
     }
   });
