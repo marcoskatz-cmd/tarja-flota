@@ -113,3 +113,13 @@ module.exports['set_clave_avisos guarda CLAVE_TARJAS solo con la clave de instal
   assert.strictEqual(ctx.prop_('CLAVE_TARJAS'), 'abc');
   assert.strictEqual(JSON.stringify(r).indexOf('abc'), -1, 'la clave no vuelve en la respuesta');
 };
+
+module.exports['set_config escribe una clave de CONFIG solo con la clave de instalación'] = () => {
+  const ctx = armar();
+  ctx.setProp_('BOOTSTRAP_KEY', 'k');
+  assert.strictEqual(get(ctx, { action: 'set_config', key: 'mal', clave: 'SHEET_ROPA_ID', valor: 'x' }).ok, false);
+  const r = get(ctx, { action: 'set_config', key: 'k', clave: 'SHEET_ROPA_ID', valor: 'ropa123' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(ctx.leer_('CONFIG').find((c) => c.clave === 'SHEET_ROPA_ID').valor, 'ropa123');
+  assert.strictEqual(get(ctx, { action: 'set_config', key: 'k', clave: 'INEXISTENTE', valor: '1' }).ok, false, 'solo claves conocidas');
+};
