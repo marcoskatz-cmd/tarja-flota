@@ -4,63 +4,22 @@
 <script src="https://marcoskatz-cmd.github.io/app-ingeco/guard.js" data-modulo="TARJAS"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0f766e">
+<meta name="theme-color" content="#0f1a3d">
 <title>Tarja de equipos — Panel</title>
-<link rel="stylesheet" href="estilo.css?v=3">
-<style>
-  main { max-width: 860px; }
-  .cabecera-lista { position: sticky; top: 0; z-index: 5; background: var(--fondo); padding: .2rem 0 .1rem; }
-  .cabecera-lista input { margin-bottom: .4rem; }
-  .lista-eq { display: grid; gap: .45rem; }
-  .eq-fila { background: var(--tarjeta); border: 1px solid var(--borde); border-left-width: 6px; border-radius: .7rem; }
-  .eq-fila.abierta { border-left-color: #1e3a8a; }
-  .eq-fila.cerrada { border-left-color: var(--acento); }
-  .eq-fila.sin_tarja { border-left-color: var(--alerta); }
-  .eq-fila.sin_actividad { border-left-color: var(--borde); }
-  .eq-cab { width: 100%; display: grid; grid-template-columns: 5.2rem 1fr auto; gap: .6rem; align-items: center;
-    text-align: left; background: none; border: 0; padding: .65rem .8rem; color: var(--texto); font-size: .93rem; }
-  .eq-cod { font-weight: 800; font-size: 1.15rem; color: #1e3a8a; letter-spacing: .02em; }
-  .eq-der { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; }
-  .eq-horom { font-size: .8rem; }
-  .eq-det { padding: 0 .8rem .8rem; border-top: 1px solid var(--borde); }
-  .chip.azul { background: #e8eef7; color: #1e3a8a; }
-  .bloque { margin-top: .7rem; }
-  .bloque .fila select { width: auto; font-size: .85rem; padding: .35rem; }
-  table { width: 100%; border-collapse: collapse; font-size: .86rem; }
-  th, td { text-align: left; padding: .45rem .35rem; border-bottom: 1px solid var(--borde); vertical-align: top; }
-  th { color: var(--tenue); font-weight: 600; font-size: .78rem; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  tr.anulada td { text-decoration: line-through; color: var(--tenue); }
-  .scroll-x { overflow-x: auto; }
-  .ajustes { display: flex; flex-wrap: wrap; gap: .8rem; align-items: center; margin-top: .8rem; font-size: .88rem; }
-  .ajustes label { margin: 0; font-weight: 500; display: flex; gap: .4rem; align-items: center; }
-  .ajustes select { width: auto; padding: .35rem; font-size: .88rem; }
-  button.chip { border: 1px solid var(--borde); background: var(--tarjeta); cursor: pointer; }
-  .inactivos { margin-top: 1.2rem; font-size: .9rem; }
-  .inactivos summary { cursor: pointer; color: var(--tenue); padding: .4rem 0; }
-  .fila-inactiva { display: flex; justify-content: space-between; gap: .6rem; padding: .45rem 0; border-bottom: 1px solid var(--borde); }
-  .pie-panel { text-align: center; margin-top: 1.2rem; font-size: .88rem; }
-  .pie-panel a { color: var(--acento); }
-  .bloqueado { text-align: center; padding: 3rem 1rem; }
-  .bloqueado a { color: var(--acento); font-weight: 700; }
-  @media (max-width: 520px) { .eq-cab { grid-template-columns: 4.2rem 1fr; } .eq-der { grid-column: 1 / -1; flex-direction: row; justify-content: flex-start; } }
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="panel.css?v=5">
 </head>
 <body>
-<header>
-  <div>
-    <div class="equipo">Tarja de equipos</div>
-    <div class="fecha" id="hQuien"></div>
-  </div>
-  <button id="btnActualizar" hidden>Actualizar</button>
-</header>
-<main id="app"><div class="cargando">Cargando…</div></main>
+<main class="vista" id="app"><div class="cargando">Cargando…</div></main>
+<div class="pie"><img src="logos/ingeco.png" alt="INGECO" onerror="this.remove()"></div>
+<div class="modal" id="hoja" hidden><div class="modal-caja" id="hojaCaja"></div></div>
 
-<div class="marca"><img class="ingeco" src="logos/ingeco.png" alt="INGECO" onerror="this.remove()"></div>
 <script>window.TARJA_API_URL = 'https://script.google.com/macros/s/AKfycbydf1RDfDnIPZs2uZaiXyZ7uPsmw67gUbQ1C2-NRcZkmg9OO4ZMQe45AyMTc75k0nEv/exec';</script>
-<script src="reglas.js?v=3"></script>
-<script src="cola.js?v=3"></script>
-<script src="api.js?v=3"></script>
-<script src="panel.js?v=3"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="reglas.js?v=4"></script>
+<script src="cola.js?v=4"></script>
+<script src="api.js?v=4"></script>
+<script src="panel.js?v=5"></script>
 </body>
 </html>
