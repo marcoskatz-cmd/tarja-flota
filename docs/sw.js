@@ -6,10 +6,11 @@
  * Las teselas del mapa (panel) tampoco se cachean.
  */
 
-const CACHE = 'tarja-flota-v5';
+const CACHE = 'tarja-flota-v6';
 // Los assets van con ?v=N igual que en el HTML. Al publicar un cambio hay que
 // subir el número acá y en index.html, panel.html y ayuda.html.
-const V = '5';
+const V = '6';
+const COMUN = 'https://marcoskatz-cmd.github.io/app-ingeco/ingeco.';
 const ARMAZON = [
   './',
   './index.html',
@@ -46,6 +47,17 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   if (url.hostname.indexOf('script.google.com') !== -1) return;
   if (url.hostname.indexOf('tile.openstreetmap.org') !== -1 || url.hostname.indexOf('unpkg.com') !== -1) return;
+
+  // Estilo común de la App INGECO (ingeco.css / ingeco.js): red primero, caché solo sin señal.
+  // Sin respaldo a index.html: si no hay copia, que falle y quede el respaldo mínimo del <head>.
+  if (e.request.url.startsWith(COMUN)) {
+    e.respondWith(
+      fetch(e.request, { cache: 'no-cache' })
+        .then((r) => { if (r && r.ok) { const copia = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copia)); } return r; })
+        .catch(() => caches.match(e.request))
+    );
+    return;
+  }
 
   // Red primero (sin caché HTTP de Pages) para tener la última versión; caché como red de seguridad.
   e.respondWith(

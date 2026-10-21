@@ -3,17 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f766e">
+<meta name="theme-color" content="#f5f4f0">
 <link rel="manifest" href="manifest.json">
 <title>Tarja de equipos — INGECO</title>
-<link rel="stylesheet" href="estilo.css?v=5">
+<style>:root{--azul:#1e3a8a;--azul-claro:#2b4fb3;--azul-suave:#e6ecfb;--tinta:#0f1a3d;--teal:#0e8a7a;--teal-suave:#dcf1ee;--ambar:#d98f00;--ambar-suave:#fff1cf;--ambar-texto:#8a5a00;--alerta:#b8410e;--alerta-suave:#fbe6dc;--fondo:#f5f4f0;--fondo-2:#ebe9e3;--superficie:#fff;--texto:#171c2e;--texto-2:#5b6274;--texto-3:#8a90a0;--linea:#e2dfd7;--linea-fuerte:#c9c5bb;--radio:14px;--radio-s:10px;--barra-h:56px;--cuerpo:system-ui,sans-serif;--display:system-ui,sans-serif}[data-ig-volver]{display:none}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://marcoskatz-cmd.github.io/app-ingeco/ingeco.css">
+<script src="https://marcoskatz-cmd.github.io/app-ingeco/ingeco.js" defer></script>
+<link rel="stylesheet" href="estilo.css?v=6">
 </head>
 <body>
 
 <header>
-  <div>
-    <div class="equipo" id="hEquipo">Tarja de equipos</div>
-    <div class="fecha" id="hFecha"></div>
+  <div class="izq">
+    <button class="ig-volver" data-ig-volver aria-label="Volver a la App INGECO"><svg class="i" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <div>
+      <div class="equipo" id="hEquipo">Tarja de equipos</div>
+      <div class="fecha" id="hFecha"></div>
+    </div>
   </div>
   <div class="derecha">
     <button id="hQuien" class="quien" hidden title="Cambiar de persona"></button>
@@ -34,14 +41,14 @@
 </div>
 
 <script>window.TARJA_API_URL = 'https://script.google.com/macros/s/AKfycbydf1RDfDnIPZs2uZaiXyZ7uPsmw67gUbQ1C2-NRcZkmg9OO4ZMQe45AyMTc75k0nEv/exec';</script>
-<script src="reglas.js?v=5"></script>
-<script src="cola.js?v=5"></script>
-<script src="api.js?v=5"></script>
-<script src="datos.js?v=5"></script>
-<script src="identidad.js?v=5"></script>
-<script src="selector.js?v=5"></script>
-<script src="camara.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="reglas.js?v=6"></script>
+<script src="cola.js?v=6"></script>
+<script src="api.js?v=6"></script>
+<script src="datos.js?v=6"></script>
+<script src="identidad.js?v=6"></script>
+<script src="selector.js?v=6"></script>
+<script src="camara.js?v=6"></script>
+<script src="app.js?v=6"></script>
 <script>
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>

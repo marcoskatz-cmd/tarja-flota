@@ -304,7 +304,10 @@ function verFallas(cont) {
 
 let mapa = null;
 let capa = null;
-const COLOR = { hoy: '#0e8a7a', semana: '#1e3a8a', viejo: '#d98f00' };
+// Colores de antigüedad desde los tokens de ingeco.css (se leen al dibujar: ingeco.js es defer).
+const COLOR_TOKEN = { hoy: 'teal', semana: 'azul', viejo: 'ambar' };
+const COLOR = {};
+function leerColores() { Object.keys(COLOR_TOKEN).forEach((k) => { COLOR[k] = (window.IG && IG.color(COLOR_TOKEN[k])) || `var(--${COLOR_TOKEN[k]})`; }); }
 
 function antiguedad(ts) {
   if (!ts) return 'viejo';
@@ -314,6 +317,7 @@ function antiguedad(ts) {
 }
 
 async function verMapa(cont) {
+  leerColores();
   cont.innerHTML = `
     <div id="mapa"></div>
     <div class="leyenda">
