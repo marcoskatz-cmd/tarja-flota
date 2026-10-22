@@ -12,7 +12,7 @@
 const app = document.getElementById('app');
 const hoja = document.getElementById('hoja');
 const hojaCaja = document.getElementById('hojaCaja');
-const APP_INGECO = 'https://marcoskatz-cmd.github.io/app-ingeco/';
+const APP_INGECO = 'https://app.ingecosa.com.ar/';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = (v, d) => (v === '' || v == null || !isFinite(Number(v)) ? '—' : Number(v).toLocaleString('es-AR', { maximumFractionDigits: d == null ? 1 : d }));
