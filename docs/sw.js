@@ -6,10 +6,10 @@
  * Las teselas del mapa (panel) tampoco se cachean.
  */
 
-const CACHE = 'tarja-flota-v6';
+const CACHE = 'tarja-flota-v7';
 // Los assets van con ?v=N igual que en el HTML. Al publicar un cambio hay que
 // subir el número acá y en index.html, panel.html y ayuda.html.
-const V = '7';
+const V = '8';
 const COMUN = 'https://app.ingecosa.com.ar/ingeco.';
 const ARMAZON = [
   './',

@@ -533,6 +533,19 @@ function cierreValor(foto, repetir, tercero) {
           ${motivos.map((m) => `<button class="opcion" data-m="${esc(m)}">${esc(m)}</button>`).join('')}
         </div>` : ''}
     </div>
+    <div class="tarjeta">
+      <h3 style="margin-top:0">¿Cargaste algo hoy? (litros)</h3>
+      <div class="tenue">Dejá vacío lo que no cargaste.</div>
+      <label>Combustible</label><input type="number" id="fl_comb" inputmode="decimal" min="0" placeholder="0">
+      <label>Aceite de motor</label><input type="number" id="fl_motor" inputmode="decimal" min="0" placeholder="0">
+      <label>Aceite hidráulico</label><input type="number" id="fl_hidr" inputmode="decimal" min="0" placeholder="0">
+      <label>Aceite de transmisión</label><input type="number" id="fl_trans" inputmode="decimal" min="0" placeholder="0">
+      <label>¿Engrasaste?</label>
+      <div class="opciones" id="grasa">
+        <button class="opcion" data-g="Sí">Sí</button>
+        <button class="opcion" data-g="No">No</button>
+      </div>
+    </div>
     <button class="principal" id="enviar" disabled>Cerrar la jornada</button>
   `);
 
@@ -542,7 +555,17 @@ function cierreValor(foto, repetir, tercero) {
   const bloqueExceso = document.getElementById('bloqueExceso');
   const motivoExceso = document.getElementById('motivoExceso');
   let motivo = '';
+  let grasa = '';
+  const FLUIDOS = ['fl_comb', 'fl_motor', 'fl_hidr', 'fl_trans'];
+  const litros = (id) => Number(document.getElementById(id).value) || 0;
   document.getElementById('rep').onclick = repetir;
+  FLUIDOS.forEach((id) => { document.getElementById(id).oninput = () => revisar(); });
+  document.querySelectorAll('#grasa .opcion').forEach((b) => {
+    b.onclick = () => {
+      document.querySelectorAll('#grasa .opcion').forEach((x) => x.classList.remove('elegido'));
+      b.classList.add('elegido'); grasa = b.dataset.g; revisar();
+    };
+  });
 
   function revisar() {
     const v = Number(valor.value);
@@ -560,6 +583,8 @@ function cierreValor(foto, repetir, tercero) {
     else calc.textContent = `Serían ${h.toFixed(1)} horas de trabajo.`;
     bloqueExceso.hidden = !exceso;
     if (tercero && !motivo) ok = false;
+    if (!grasa) ok = false;
+    if (FLUIDOS.some((id) => Number(document.getElementById(id).value) < 0)) ok = false;
     enviar.disabled = !ok;
   }
   valor.oninput = revisar;
@@ -580,6 +605,11 @@ function cierreValor(foto, repetir, tercero) {
       horom_fin: Number(valor.value),
       legajo: quien.legajo || '',
       operador: quien.nombre,
+      combustible: litros('fl_comb'),
+      aceite_motor: litros('fl_motor'),
+      aceite_hidr: litros('fl_hidr'),
+      aceite_trans: litros('fl_trans'),
+      grasa,
       ...Camara.gpsParaEnvio()
     };
     if (tercero) datos.motivo_cierre_tercero = motivo;

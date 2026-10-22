@@ -144,9 +144,18 @@ function hojaTarjas_(anio) {
   var ss = ss_();
   var nombre = 'TARJAS_' + anio;
   var sh = ss.getSheetByName(nombre);
-  if (sh) return sh;
-  sh = ss.insertSheet(nombre);
   var enc = HOJAS.TARJAS;
+  if (sh) {
+    // Hojas creadas antes de sumar columnas nuevas al final: completa el encabezado.
+    var actual = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    if (actual.length < enc.length) {
+      if (sh.getMaxColumns() < enc.length) sh.insertColumnsAfter(sh.getMaxColumns(), enc.length - sh.getMaxColumns());
+      sh.getRange(1, actual.length + 1, 1, enc.length - actual.length)
+        .setValues([enc.slice(actual.length)]).setFontWeight('bold');
+    }
+    return sh;
+  }
+  sh = ss.insertSheet(nombre);
   sh.getRange(1, 1, 1, enc.length).setValues([enc]);
   sh.setFrozenRows(1);
   sh.getRange(1, 1, 1, enc.length).setFontWeight('bold');

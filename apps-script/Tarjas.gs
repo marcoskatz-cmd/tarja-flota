@@ -300,6 +300,22 @@ function registrarOperadorManual_(nombre) {
 
 // ---------- cierre ----------
 
+/** Litros cargados en la jornada (vacío = 0) y si se engrasó. */
+function fluidosDe_(p) {
+  function litros(v) {
+    var n = Number(v || 0);
+    if (!isFinite(n) || n < 0) throw new Error('Los litros cargados no pueden ser negativos.');
+    return n;
+  }
+  var grasa = String(p.grasa || '').trim();
+  return {
+    combustible: litros(p.combustible), aceite_motor: litros(p.aceite_motor),
+    aceite_hidr: litros(p.aceite_hidr), aceite_trans: litros(p.aceite_trans),
+    // Cierres encolados de versiones anteriores de la app no traen el dato.
+    grasa: grasa === 'Sí' || grasa === 'No' ? grasa : ''
+  };
+}
+
 /**
  * Cierra la jornada con la foto del horómetro final. Si quien cierra no es
  * quien abrió, exige un motivo y la tarja queda marcada como cierre de tercero.
@@ -341,8 +357,12 @@ function cerrarTarja_(p) {
     var urlHorom = guardarFoto_(p.foto_horometro, t.equipo, fecha, 'horometro-fin');
     var conGps = gpsValido_(p.lat, p.lon);
     var horomFin = Number(p.horom_fin);
+    var fluidos = fluidosDe_(p);
 
+    hojaTarjas_(fecha.slice(0, 4));
     actualizar_(t._hoja, t._fila, {
+      combustible: fluidos.combustible, aceite_motor: fluidos.aceite_motor,
+      aceite_hidr: fluidos.aceite_hidr, aceite_trans: fluidos.aceite_trans, grasa: fluidos.grasa,
       estado: 'cerrada', horom_fin: horomFin, horas: calc.horas,
       foto_horom_fin: urlHorom, ts_cierre: tsStr_(),
       lat_fin: conGps ? Number(p.lat) : '', lon_fin: conGps ? Number(p.lon) : '',
@@ -361,6 +381,10 @@ function cerrarTarja_(p) {
     actualizarPosicion_(equipo, p.lat, p.lon, { horom_tarja: horomFin, origen_horom: 'TARJA' });
 
     if (!mismo) log_(operadorCierre || legajoCierre, 'CIERRE_TERCERO', t.equipo + ' ' + fecha + ' abierta por ' + t.operador, motivo);
+
+    // Copia en PARTES DIARIOS: si falla, la tarja igual queda cerrada y se reintenta desde el panel.
+    try { espejarParte_(buscarPorId_(t._hoja, t.id), equipo); }
+    catch (eEsp) { log_('sistema', 'ESPEJO_ERROR', t.equipo + ' ' + fecha, String(eEsp && eEsp.message || eEsp)); }
 
     return { ya_estaba_cerrada: false, tarja: tarjaPublica_(buscarPorId_(t._hoja, t.id)), horas: calc.horas };
   } finally {
