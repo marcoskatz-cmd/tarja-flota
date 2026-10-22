@@ -30,6 +30,7 @@
       <button class="equipo-card" data-codigo="${esc(e.codigo)}">
         <div class="codigo">${esc(e.codigo)}</div>
         <div class="desc">${esc(e.descripcion || '')}${e.patente ? ` <span class="tenue">· ${esc(e.patente)}</span>` : ''}</div>
+        ${e.lugar ? `<div class="tenue">${esc(e.lugar)}</div>` : ''}
         <div class="pistas">
           ${e.abierta_por ? `<span class="chip alerta">Abierta por ${esc(e.abierta_por)}</span>` : ''}
           ${ultima ? `<span class="chip">${esc(ultima)}</span>` : '<span class="chip">Sin tarjas todavía</span>'}
@@ -50,19 +51,30 @@
     const cajas = cont.querySelector('#selGrupos');
     const buscar = cont.querySelector('#selBuscar');
 
+    // Sin listado de entrada: aparecen sugerencias recién al escribir y se
+    // achican con cada letra (como un desplegable).
+    const MAX = 8;
     function pintar() {
       const q = normalizarTexto_(buscar.value);
-      cajas.innerHTML = grupos.map((g) => {
-        const eqs = g.equipos.filter((e) => !q || normalizarTexto_([e.codigo, e.descripcion, e.patente, e.lugar].join(' ')).indexOf(q) >= 0);
-        if (!eqs.length) return '';
-        return `<h3 class="grupo">${esc(g.lugar)}</h3>${eqs.map((e) => tarjeta(e, d.hoy)).join('')}`;
-      }).join('') || '<div class="tenue" style="padding:.6rem 0">Ningún equipo coincide.</div>';
+      if (!q) {
+        cajas.innerHTML = '<div class="tenue" style="padding:.6rem 0">Escribí el código (ej. EXC-08) o el modelo.</div>';
+        return;
+      }
+      const eqs = [];
+      grupos.forEach((g) => g.equipos.forEach((e) => {
+        if (normalizarTexto_([e.codigo, e.descripcion, e.patente, e.lugar].join(' ')).indexOf(q) >= 0) eqs.push(e);
+      }));
+      cajas.innerHTML = eqs.length
+        ? eqs.slice(0, MAX).map((e) => tarjeta(e, d.hoy)).join('') +
+          (eqs.length > MAX ? `<div class="tenue" style="padding:.4rem 0">y ${eqs.length - MAX} más… seguí escribiendo.</div>` : '')
+        : '<div class="tenue" style="padding:.6rem 0">Ningún equipo coincide.</div>';
       cajas.querySelectorAll('.equipo-card').forEach((b) => {
         b.onclick = () => confirmar(cont, Datos.equipo(b.dataset.codigo), alElegir, () => pantalla(cont, alElegir));
       });
     }
     buscar.oninput = pintar;
     pintar();
+    buscar.focus();
   }
 
   function confirmar(cont, e, alElegir, volver) {

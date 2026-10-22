@@ -9,7 +9,7 @@
 const CACHE = 'tarja-flota-v6';
 // Los assets van con ?v=N igual que en el HTML. Al publicar un cambio hay que
 // subir el número acá y en index.html, panel.html y ayuda.html.
-const V = '6';
+const V = '7';
 const COMUN = 'https://app.ingecosa.com.ar/ingeco.';
 const ARMAZON = [
   './',
