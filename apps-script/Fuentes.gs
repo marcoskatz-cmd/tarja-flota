@@ -225,7 +225,11 @@ function syncPersonal_() {
 
 // ---------- horómetro inicial ----------
 
-/** Lee SVC_PANELPROG del snapshot de INGECOV como {codigo: ult_hrkm}. */
+/**
+ * Lee SVC_PANELPROG del snapshot de INGECOV como {codigo: horómetro actual}.
+ * Ojo: ULT HRKM es el horómetro del ÚLTIMO SERVICE, no el actual; solo se usa
+ * si un snapshot viejo no trae HRKM ACTUAL.
+ */
 function horometrosIngecov_() {
   var out = {};
   var filas = null, header = null;
@@ -243,7 +247,7 @@ function horometrosIngecov_() {
     header = t.header; filas = t.filas;
   }
   var iCod = idx_(header, ['CODIGO']);
-  var iHr = idx_(header, ['ULT HRKM', 'ULTHRKM', 'ACTUAL']);
+  var iHr = idx_(header, ['HRKM ACTUAL', 'ACTUAL', 'ULT HRKM']);
   if (iCod < 0 || iHr < 0) return out;
   filas.forEach(function (f) {
     var c = at_(f, iCod).toUpperCase(), v = Number(at_(f, iHr));
@@ -252,14 +256,19 @@ function horometrosIngecov_() {
   return out;
 }
 
-/** Siembra horom_tarja desde INGECOV para los equipos que todavía no tienen. */
+/**
+ * Siembra horom_tarja desde INGECOV para los equipos que todavía no tienen, y
+ * lo refresca en los que lo tienen de INGECOV y aún no tuvieron ninguna tarja.
+ */
 function sembrarHorometros_() {
   var ref = horometrosIngecov_();
   var sembrados = 0;
   leer_('EQUIPOS').forEach(function (e) {
-    if (String(e.horom_tarja) !== '' && e.horom_tarja != null) return;
+    var vacio = String(e.horom_tarja) === '' || e.horom_tarja == null;
+    var deIngecov = String(e.origen_horom) === 'INGECOV' && !String(e.ultima_tarja || '');
+    if (!vacio && !deIngecov) return;
     var v = ref[String(e.codigo).toUpperCase()];
-    if (v === undefined) return;
+    if (v === undefined || (!vacio && Number(e.horom_tarja) === v)) return;
     actualizar_('EQUIPOS', e._fila, { horom_tarja: v, origen_horom: 'INGECOV' });
     sembrados++;
   });

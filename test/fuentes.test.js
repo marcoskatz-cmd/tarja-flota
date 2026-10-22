@@ -32,8 +32,8 @@ function armar(opciones) {
   // Snapshot INGECOV (planilla)
   const snap = spreadsheetFake(SNAP_ID, 'snapshot');
   ctx.__planillas[SNAP_ID] = snap;
-  cargarHoja(snap, 'SVC_PANELPROG', ['CODIGO', 'DESCRIPCION', 'PATENTE', 'ULT FECHA', 'ULT HRKM', 'EST HRKM', 'OPERATIVIDAD', 'FRECUENCIA', 'ESTADO'],
-    [['CF-03', 'Cargadora', 'AB123', '2026-10-01', 4812, 4850, 'ok', 250, 'ok']]);
+  cargarHoja(snap, 'SVC_PANELPROG', ['CODIGO', 'DESCRIPCION', 'PATENTE', 'ULT FECHA', 'ULT HRKM', 'HRKM ACTUAL', 'EST HRKM', 'OPERATIVIDAD', 'FRECUENCIA', 'ESTADO'],
+    [['CF-03', 'Cargadora', 'AB123', '2026-10-01', 4700, 4812, 4950, 'ok', 250, 'ok']]);
   // CONFIG
   const cfg = ctx.ss_().getSheetByName('CONFIG');
   cfg.filas.forEach((f) => {
@@ -104,7 +104,7 @@ module.exports = {
     assert.ok(r.faltan.length > 0);
     assert.ok(ctx.prop_('DIAG_PERSONAL'));
   },
-  'sembrarHorometros_ toma ULT HRKM del snapshot solo para equipos sin horómetro': () => {
+  'sembrarHorometros_ toma HRKM ACTUAL (no el del último service) del snapshot solo para equipos sin horómetro': () => {
     const ctx = armar();
     ctx.syncEquipos_();
     const r = ctx.sembrarHorometros_();
