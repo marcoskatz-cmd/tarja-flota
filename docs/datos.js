@@ -19,8 +19,25 @@
     return r[campo];
   }
 
-  /** Refresca lo que pueda y completa con caché. Lanza solo si no hay nada de nada. */
+  /**
+   * Si ya hay datos guardados, los devuelve al instante y refresca en segundo
+   * plano (cada llamada a Apps Script tarda ~3 s). La primera vez espera.
+   */
   async function cargar() {
+    const p = leer(CLAVES.personas), e = leer(CLAVES.equipos), i = leer(CLAVES.items);
+    if (Array.isArray(p) && p.length && Array.isArray(e) && e.length && Array.isArray(i)) {
+      memoria.personas = p; memoria.equipos = e; memoria.items = i;
+      if (!memoria.hoy) memoria.hoy = new Date().toISOString().slice(0, 10);
+      memoria.desdeCache = true;
+      memoria.ts = Date.now();
+      refrescar().catch(() => { /* sin señal: seguimos con lo guardado */ });
+      return memoria;
+    }
+    return refrescar();
+  }
+
+  /** Refresca lo que pueda y completa con caché. Lanza solo si no hay nada de nada. */
+  async function refrescar() {
     const pedidos = [
       traer('nomina', 'personas').then((v) => ({ k: 'personas', v })),
       API.llamar('equipos').then((r) => ({ k: 'equipos', v: r.equipos, hoy: r.hoy })),

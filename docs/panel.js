@@ -21,6 +21,25 @@ const cmpCod = (a, b) => String(a).localeCompare(String(b), 'es', { numeric: tru
 
 function errorEn(el, e) { el.innerHTML = `<div class="banner">${esc(e.message || e)}</div>`; }
 
+/** Aviso flotante breve (para errores de acciones que ya se mostraron hechas). */
+function aviso(txt) {
+  const d = document.createElement('div');
+  d.textContent = txt;
+  d.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9999;background:#b45309;color:#fff;padding:10px 16px;border-radius:10px;font-size:.9rem;max-width:90vw;box-shadow:0 4px 14px rgba(0,0,0,.25)';
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 6000);
+}
+
+// Último estado completo guardado en el navegador: se pinta al abrir y se
+// refresca en segundo plano (cada llamada a Apps Script tarda ~3 s).
+const CACHE_PANEL = 'tf_panel_cache';
+function guardarCache() {
+  try { localStorage.setItem(CACHE_PANEL, JSON.stringify({ hoy: S.hoy, config: S.config, pend: S.pend })); } catch (e) { /* sin espacio */ }
+}
+function leerCache() {
+  try { return JSON.parse(localStorage.getItem(CACHE_PANEL) || 'null'); } catch (e) { return null; }
+}
+
 async function pedir(action, datos = {}) {
   if (!window.INGECO_SESION) throw new Error('La sesión venció. Volvé a abrir el panel desde la app INGECO.');
   return API.llamar(action, { ...datos, sesion: window.INGECO_SESION });
@@ -58,10 +77,19 @@ function iniciar() {
 }
 
 async function cargar() {
+  const c = leerCache();
+  if (c && c.hoy && c.config && c.pend) {
+    // Pintado instantáneo con lo último guardado; después se actualiza solo.
+    S.hoy = c.hoy; S.config = c.config; S.pend = c.pend;
+    pintar();
+    try { await recargarSilencioso(); } catch (e) { aviso('No se pudo actualizar: ' + (e.message || e) + '. Se muestran los últimos datos guardados.'); }
+    return;
+  }
   app.innerHTML = '<div class="cargando">Cargando…</div>';
   try {
     [S.hoy, S.config, S.pend] = await Promise.all([pedir('hoy'), pedir('equipos_config'), pedir('pendientes')]);
   } catch (e) { return errorEn(app, e); }
+  guardarCache();
   pintar();
 }
 
@@ -235,7 +263,8 @@ async function abrirEquipo(codigo) {
   document.getElementById('activo').onclick = async () => {
     try {
       await pedir('set_equipo', { codigo, activo_tarja: activo ? 'NO' : 'SI' });
-      cerrarHoja(); await cargar();
+      cerrarHoja();
+      recargarSilencioso().catch((e) => aviso('No se pudo actualizar: ' + (e.message || e)));
     } catch (e) { alert(e.message); }
   };
   hojaCaja.querySelectorAll('[data-anular]').forEach((b) => {
@@ -251,7 +280,11 @@ async function abrirEquipo(codigo) {
       m.focus();
       ok.onclick = async () => {
         ok.disabled = true;
-        try { await pedir('anular', { tarja_id: b.dataset.anular, motivo: m.value.trim() }); await recargarSilencioso(); abrirEquipo(codigo); }
+        try {
+          await pedir('anular', { tarja_id: b.dataset.anular, motivo: m.value.trim() });
+          abrirEquipo(codigo);
+          recargarSilencioso().catch((e) => aviso('No se pudo actualizar: ' + (e.message || e)));
+        }
         catch (e) { alert(e.message); ok.disabled = false; }
       };
     };
@@ -264,6 +297,7 @@ document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !hoja.
 
 async function recargarSilencioso() {
   [S.hoy, S.config, S.pend] = await Promise.all([pedir('hoy'), pedir('equipos_config'), pedir('pendientes')]);
+  guardarCache();
   pintar();
 }
 
@@ -285,9 +319,17 @@ function enlazarFallas(raiz, despues) {
   raiz.querySelectorAll('[data-falla]').forEach((s) => {
     s.onchange = async () => {
       if (!s.value) return;
-      s.disabled = true;
-      try { await pedir('cerrar_pendiente', { id: s.dataset.falla, motivo: s.value }); await recargarSilencioso(); if (despues) despues(); }
-      catch (e) { alert(e.message); s.disabled = false; }
+      // Optimista: la falla desaparece ya; si el servidor la rechaza, se avisa y se recarga.
+      const id = s.dataset.falla, motivo = s.value;
+      S.pend.pendientes = S.pend.pendientes.filter((p) => String(p.id) !== String(id));
+      guardarCache();
+      pintar(); if (despues) despues();
+      pedir('cerrar_pendiente', { id, motivo })
+        .catch((e) => {
+          aviso('No se pudo cerrar la falla: ' + (e.message || e) + '. Se recargan los datos.');
+          return recargarSilencioso().then(() => { if (despues && !hoja.hidden) despues(); });
+        })
+        .catch(() => {});
     };
   });
 }
