@@ -72,6 +72,7 @@ function panelHoy_(p) {
 // ---------- Mapa ----------
 
 function panelMapa_() {
+  try { posicionesDesdePartesSiToca_(); } catch (e) { }
   return {
     puntos: activosTarja_().filter(function (e) { return gpsValido_(e.lat, e.lon); }).map(function (e) {
       return {

@@ -286,6 +286,7 @@ function horometroIngecovDe_(codigo) {
 function syncFuentes_() {
   var r = { equipos: syncEquipos_(), personal: syncPersonal_() };
   r.horometros = sembrarHorometros_();
+  try { r.posiciones = posicionesDesdePartes_(); } catch (e) { r.posiciones = 'error: ' + e.message; }
   setProp_('ULTIMO_SYNC', tsStr_());
   return r;
 }
