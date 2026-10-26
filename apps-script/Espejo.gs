@@ -249,7 +249,8 @@ function checklistDeTarjaPD_(tarjaId) {
  * Escribe la jornada cerrada `t` en PARTES DIARIOS / CHECKLISTS / REGISTRO APP.
  * Devuelve true si escribió, false si ya estaba.
  */
-function espejarParte_(t, equipo) {
+function espejarParte_(t, equipo, opciones) {
+  opciones = opciones || {};
   if (!t || String(t.estado) !== 'cerrada') return false;
   void equipo;
   var ss = ssEspejo_();
@@ -281,7 +282,7 @@ function espejarParte_(t, equipo) {
   }
 
   try {
-    return escribirPartePD_(ss, hP, hC, hR, filaLog, t, codigo, eq, operario, fecha, fechaTxt, gpsOk, gpsUrl, he, hs);
+    return escribirPartePD_(ss, hP, opciones.sinChecklist ? null : hC, hR, filaLog, t, codigo, eq, operario, fecha, fechaTxt, gpsOk, gpsUrl, he, hs);
   } catch (e) {
     if (hR && filaLog) hR.getRange(filaLog, 12, 1, 2).setValues([['ERROR', String(e && e.stack || e)]]);
     throw e;
@@ -481,6 +482,8 @@ function posicionesDesdePartesSiToca_() {
   if (!lock.tryLock(1000)) return;
   try { posicionesDesdePartes_(); }
   catch (e) { log_('sistema', 'POS_PARTES_ERROR', '', String(e && e.message || e)); }
+  try { posicionesDesdeCorrientes_(); }
+  catch (e) { log_('sistema', 'POS_CORRIENTES_ERROR', '', String(e && e.message || e)); }
   finally { lock.releaseLock(); }
 }
 
@@ -521,4 +524,78 @@ function probarEspejoEnCopia() {
   } finally {
     if (antes) setProp_('ID_PARTES_DIARIOS', antes); else borrarProp_('ID_PARTES_DIARIOS');
   }
+}
+
+/**
+ * Para correr a mano desde el editor: vuelve a escribir en PARTES DIARIOS el
+ * parte real del RTP-11 del 26-oct (alguien borró la fila 3821). Su checklist
+ * sigue en CHECKLISTS, así que no se repite.
+ */
+function restaurarParteRTP11() {
+  var t = buscarPorId_('TARJAS_2026', 'f611e076-985f-48d8-a3f2-ad0c3d941b9e');
+  if (!t) throw new Error('No encuentro la tarja del RTP-11.');
+  var ok = espejarParte_(t, null, { sinChecklist: true });
+  Logger.log(ok ? 'Parte del RTP-11 restaurado.' : 'Ya estaba en PARTES DIARIOS, no se escribió de nuevo.');
+  return ok;
+}
+
+// ---------- ubicaciones desde la tarja de Corrientes ----------
+
+/**
+ * La obra de Corrientes tiene su propia tarja (proyecto tarja-corrientes) con
+ * equipos llamados "PC200" e "HIDROMEK". Su última ubicación se pasa al
+ * equipo de flota que corresponde, para que aparezca en el mapa (TARJAS e INGECOV).
+ * Equivalencias en CONFIG CORRIENTES_EQUIPOS ("PC200:EXC-06,HIDROMEK:RTP-12").
+ */
+var CORRIENTES_DEFECTO = {
+  SHEET_ID: '1i2gU-wrCzE4U6C5SdjQDhaka_hMyaoNsP0aN64lzqqk',
+  EQUIPOS: 'PC200:EXC-06,HIDROMEK:RTP-12'
+};
+
+function equivalenciasCorrientes_() {
+  var m = {};
+  String(config_('CORRIENTES_EQUIPOS') || CORRIENTES_DEFECTO.EQUIPOS).split(',').forEach(function (par) {
+    var p = par.split(':');
+    if (p.length === 2 && p[0].trim() && p[1].trim()) m[p[0].trim().toUpperCase()] = p[1].trim().toUpperCase();
+  });
+  return m;
+}
+
+function tsTexto_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
+  return String(v || '').trim();
+}
+
+function posicionesDesdeCorrientes_() {
+  var equiv = equivalenciasCorrientes_();
+  var sh = SpreadsheetApp.openById(config_('CORRIENTES_SHEET_ID') || CORRIENTES_DEFECTO.SHEET_ID).getSheetByName('TARJAS');
+  if (!sh || sh.getLastRow() < 2) return 0;
+  var datos = sh.getDataRange().getValues();
+  var h = datos[0].map(String);
+  var iE = h.indexOf('equipo'), iEs = h.indexOf('estado'), iO = h.indexOf('operador');
+  var iLa = h.indexOf('lat'), iLo = h.indexOf('lon'), iA = h.indexOf('ts_apertura'), iC = h.indexOf('ts_cierre');
+  if ([iE, iLa, iLo, iA].some(function (i) { return i === -1; })) throw new Error('La hoja TARJAS de Corrientes cambió de columnas.');
+
+  var mejor = {};
+  datos.slice(1).forEach(function (r) {
+    var cod = equiv[String(r[iE]).trim().toUpperCase()];
+    if (!cod || String(r[iEs]) === 'anulada' || !gpsValido_(r[iLa], r[iLo])) return;
+    var ts = tsTexto_(r[iC]) || tsTexto_(r[iA]);
+    if (!ts) return;
+    if (!mejor[cod] || ts > mejor[cod].ts) mejor[cod] = { lat: Number(r[iLa]), lon: Number(r[iLo]), ts: ts, op: String(r[iO] || '') };
+  });
+
+  var cambiados = 0;
+  leer_('EQUIPOS').forEach(function (e) {
+    var p = mejor[String(e.codigo).trim().toUpperCase()];
+    if (!p || String(e.ts_pos || '') >= p.ts) return;
+    var cambios = { lat: p.lat, lon: p.lon, ts_pos: p.ts };
+    if (!e.ultimo_operador || String(e.ultima_tarja || '') <= p.ts.slice(0, 10)) {
+      cambios.ultimo_operador = p.op;
+      cambios.ultima_tarja = p.ts.slice(0, 10);
+    }
+    actualizar_('EQUIPOS', e._fila, cambios);
+    cambiados++;
+  });
+  return cambiados;
 }

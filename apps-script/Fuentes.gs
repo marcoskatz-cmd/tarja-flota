@@ -287,6 +287,7 @@ function syncFuentes_() {
   var r = { equipos: syncEquipos_(), personal: syncPersonal_() };
   r.horometros = sembrarHorometros_();
   try { r.posiciones = posicionesDesdePartes_(); } catch (e) { r.posiciones = 'error: ' + e.message; }
+  try { r.posiciones_corrientes = posicionesDesdeCorrientes_(); } catch (e) { r.posiciones_corrientes = 'error: ' + e.message; }
   setProp_('ULTIMO_SYNC', tsStr_());
   return r;
 }
