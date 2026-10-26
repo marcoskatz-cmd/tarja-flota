@@ -153,6 +153,9 @@ function errorConCodigo_(code, msg) {
 // ---------- apertura ----------
 
 function abrirTarja_(p) {
+  if (esImplemento_(p.equipo)) {
+    throw new Error('Los implementos (batea, carretón, martillo) se cargan desde el equipo que los usó, al cerrar su jornada.');
+  }
   var equipo = equipoPorCodigo_(p.equipo);
   var fecha = hoyStr_();
   var lock = LockService.getScriptLock();

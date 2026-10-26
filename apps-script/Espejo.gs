@@ -50,6 +50,10 @@ var IMPLEMENTOS_PD = {
 };
 var CODIGOS_IMPLEMENTO_PD = ['BAT-01', 'CRT-01', 'CRT-02', 'MRT-01', 'MRT-02'];
 
+function esImplemento_(codigo) {
+  return CODIGOS_IMPLEMENTO_PD.indexOf(String(codigo || '').trim().toUpperCase()) !== -1;
+}
+
 function ssEspejo_() {
   return SpreadsheetApp.openById(prop_('ID_PARTES_DIARIOS') || ESPEJO.ID_DEFECTO);
 }

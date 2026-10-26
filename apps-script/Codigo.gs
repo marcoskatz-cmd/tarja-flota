@@ -91,7 +91,10 @@ function exigirBootstrap_(p) {
 // ---------- rutas públicas (PWA del operario) ----------
 
 function activosTarja_() {
-  return leer_('EQUIPOS').filter(function (e) { return String(e.activo_tarja).toUpperCase() === 'SI'; });
+  // Los implementos (batea, carretón, martillo) se cargan desde el equipo que los usó.
+  return leer_('EQUIPOS').filter(function (e) {
+    return String(e.activo_tarja).toUpperCase() === 'SI' && !esImplemento_(e.codigo);
+  });
 }
 
 function rutaNomina_() {

@@ -254,3 +254,10 @@ module.exports['implementosDe_ valida marca, checklist completo y detalle de fal
   const m = ctx.implementosDe_({ implementos: [{ key: 'martillo', checklist: ctx.IMPLEMENTOS_PD.martillo.items.map((item) => ({ item, estado: 'OK' })) }] }, 'RTP-10');
   assert.strictEqual(m[0].codigo, 'MRT-02');
 };
+
+module.exports['no se abre jornada en un implemento'] = () => {
+  const ctx = armar();
+  assert.throws(() => abrir(ctx, { equipo: 'MRT-01' }), /implementos/);
+  assert.strictEqual(ctx.esImplemento_('crt-02'), true);
+  assert.strictEqual(ctx.esImplemento_('CF-03'), false);
+};
