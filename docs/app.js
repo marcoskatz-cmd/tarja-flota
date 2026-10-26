@@ -32,7 +32,37 @@ let quien = null;       // identidad {legajo, nombre, manual}
 
 // ---------- utilidades ----------
 
-function pintar(html) { app.innerHTML = html; }
+function pintar(html) {
+  app.innerHTML = '<div id="cartelGps"></div>' + html;
+  pintarCartelGps();
+}
+
+// ---------- cartel de ubicación ----------
+
+/**
+ * Sin ubicación no hay mapa ni "Ver ubicación" en PARTES DIARIOS. La carga
+ * nunca se bloquea por esto: el cartel solo insiste hasta que el GPS ande.
+ */
+function pintarCartelGps() {
+  const cont = document.getElementById('cartelGps');
+  if (!cont || !window.Camara) return;
+  const e = Camara.estadoGps();
+  const textos = {
+    preguntar: `<strong>📍 Activá la ubicación.</strong> Cuando el celular pregunte, tocá <strong>Permitir</strong>. Así sabemos dónde está cada equipo.
+      <div style="height:.5rem"></div><button class="secundaria" id="btnGps">Activar ubicación</button>`,
+    denegado: `<strong>📍 La ubicación está bloqueada.</strong> La necesitamos para saber dónde está cada equipo.<br>
+      Tocá el <strong>candado</strong> (o los <strong>tres puntos ⋮ → ℹ️</strong>) arriba, al lado de la dirección, entrá a <strong>Permisos → Ubicación</strong> y elegí <strong>Permitir</strong>.<br>
+      Si la abrís desde el ícono: <strong>Ajustes del celular → Aplicaciones → Chrome → Permisos → Ubicación → Permitir</strong>. Después volvé a abrir la app.`,
+    apagado: `<strong>📍 La ubicación del celular está apagada.</strong> Bajá la barra de arriba de la pantalla y tocá <strong>Ubicación</strong> para encenderla.
+      <div style="height:.5rem"></div><button class="secundaria" id="btnGps">Ya la encendí</button>`,
+    sin_gps: '<strong>📍 Este celular no da la ubicación.</strong> Avisale a tu supervisor.'
+  };
+  if (e === 'ok' || !textos[e]) { cont.innerHTML = ''; return; }
+  cont.innerHTML = aviso('alerta', textos[e]);
+  const b = document.getElementById('btnGps');
+  if (b) b.onclick = () => { b.textContent = 'Buscando ubicación…'; b.disabled = true; Camara.pedirGps(); setTimeout(pintarCartelGps, 15000); };
+}
+if (window.Camara) Camara.alCambiarGps(pintarCartelGps);
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

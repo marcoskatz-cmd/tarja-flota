@@ -15,13 +15,53 @@ const LADO_MAX = 1600;
 let stream = null;
 let coords = null;
 
-if (navigator.geolocation) {
-  navigator.geolocation.watchPosition(
-    (p) => { coords = { lat: p.coords.latitude, lon: p.coords.longitude, precision: Math.round(p.coords.accuracy || 0) }; },
-    () => { coords = null; },
+// Estado del GPS para el cartel de la app: 'ok' | 'preguntar' | 'denegado' | 'apagado' | 'sin_gps'.
+let gpsEstado = navigator.geolocation ? 'preguntar' : 'sin_gps';
+let watchId = null;
+const avisosGps = [];
+
+function cambiarEstadoGps(e) {
+  if (e === gpsEstado) return;
+  gpsEstado = e;
+  avisosGps.forEach((fn) => { try { fn(e); } catch (err) { } });
+}
+
+function seguirGps() {
+  if (!navigator.geolocation) return;
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  watchId = navigator.geolocation.watchPosition(
+    (p) => {
+      coords = { lat: p.coords.latitude, lon: p.coords.longitude, precision: Math.round(p.coords.accuracy || 0) };
+      cambiarEstadoGps('ok');
+    },
+    (err) => {
+      coords = null;
+      // 1 = permiso rechazado; 2 = ubicación del celular apagada o sin señal; 3 = tardó demasiado.
+      if (err && err.code === 1) cambiarEstadoGps('denegado');
+      else if (err && err.code === 2) cambiarEstadoGps('apagado');
+    },
     { enableHighAccuracy: true, maximumAge: 60000, timeout: 15000 }
   );
 }
+seguirGps();
+
+// Si el operario cambia el permiso desde los ajustes, el cartel se actualiza solo.
+if (navigator.permissions && navigator.permissions.query) {
+  navigator.permissions.query({ name: 'geolocation' }).then((st) => {
+    const aplicar = () => {
+      if (st.state === 'denied') cambiarEstadoGps('denegado');
+      else if (st.state === 'granted') { if (gpsEstado !== 'ok') seguirGps(); }
+      else if (gpsEstado !== 'ok') cambiarEstadoGps('preguntar');
+    };
+    aplicar();
+    st.onchange = aplicar;
+  }).catch(() => { });
+}
+
+function estadoGps() { return gpsEstado; }
+function alCambiarGps(fn) { avisosGps.push(fn); }
+/** Vuelve a pedir la ubicación (dispara el cartel del navegador si todavía no respondió). */
+function pedirGps() { seguirGps(); }
 
 /** {lat, lon, precision} o null si el celular no dio GPS. Nunca bloquea la carga. */
 function ubicacion() { return coords; }
@@ -86,4 +126,4 @@ function capturar(video, equipo, fechaHoraServidor) {
   return c.toDataURL('image/jpeg', 0.72);
 }
 
-window.Camara = { abrirCamara, cerrarCamara, capturar, ubicacion, gpsParaEnvio };
+window.Camara = { abrirCamara, cerrarCamara, capturar, ubicacion, gpsParaEnvio, estadoGps, alCambiarGps, pedirGps };
