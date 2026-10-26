@@ -4,7 +4,7 @@ const { crearContexto, cargarHoja } = require('./helpers');
 const FOTO = 'data:image/jpeg;base64,AAAA';
 
 function armar(hoy, equipos) {
-  const ctx = crearContexto({ cargar: ['Config.gs', 'Reglas.gs', 'Planillas.gs', 'Fotos.gs', 'Tarjas.gs'], hoy: hoy || '2026-10-19' });
+  const ctx = crearContexto({ cargar: ['Config.gs', 'Reglas.gs', 'Planillas.gs', 'Fotos.gs', 'Tarjas.gs', 'Espejo.gs'], hoy: hoy || '2026-10-19' });
   ctx.setupCompleto_();
   cargarHoja(ctx.ss_(), 'EQUIPOS', ctx.HOJAS.EQUIPOS, equipos || [
     { codigo: 'CF-03', descripcion: 'Cargadora', tipo_rodado: 'rodante', lugar: 'Autovías', activo_tarja: 'SI', horom_tarja: 4800, origen_horom: 'TARJA' },
@@ -237,4 +237,20 @@ module.exports['operario de la lista sin legajo (Casares) no queda marcado como 
   abrir(ctx, { legajo: '', operador: 'Ariel Gómez' });
   assert.strictEqual(ctx.leer_('TARJAS_2026')[0].operador_manual, 'NO');
   assert.strictEqual(ctx.leer_('OPERADORES_MANUALES').length, 0);
+};
+
+module.exports['implementosDe_ valida marca, checklist completo y detalle de fallas'] = () => {
+  const ctx = armar();
+  const items = ctx.IMPLEMENTOS_PD.carreton.items;
+  const ok = items.map((item) => ({ item, estado: 'OK' }));
+  assert.throws(() => ctx.implementosDe_({ implementos: [{ key: 'martillo', checklist: [] }] }, 'CMN-11'), /no corresponde/);
+  assert.throws(() => ctx.implementosDe_({ implementos: [{ key: 'carreton', checklist: ok }] }, 'CMN-11'), /marca/);
+  assert.throws(() => ctx.implementosDe_({ implementos: [{ key: 'carreton', marca: 'LEO-COR', checklist: ok.slice(1) }] }, 'CMN-11'), /Falta revisar/);
+  const conFalla = ok.map((c, i) => (i === 0 ? { item: c.item, estado: 'FALLA', detalle: '' } : c));
+  assert.throws(() => ctx.implementosDe_({ implementos: [{ key: 'carreton', marca: 'LEO-COR', checklist: conFalla }] }, 'CMN-11'), /Describí/);
+  const r = ctx.implementosDe_({ implementos: [{ key: 'carreton', marca: 'LEO-COR', checklist: ok }] }, 'CMN-11');
+  assert.strictEqual(r[0].codigo, 'CRT-02');
+  assert.strictEqual(r[0].nombre, 'Carretón (LEO-COR)');
+  const m = ctx.implementosDe_({ implementos: [{ key: 'martillo', checklist: ctx.IMPLEMENTOS_PD.martillo.items.map((item) => ({ item, estado: 'OK' })) }] }, 'RTP-10');
+  assert.strictEqual(m[0].codigo, 'MRT-02');
 };

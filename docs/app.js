@@ -124,6 +124,7 @@ async function iniciar() {
   try {
     estado = await API.llamar('estado', { equipo: equipo.codigo });
     estado.offline = false;
+    try { localStorage.setItem('tf_pd_' + equipo.codigo, JSON.stringify(estado.pd || {})); } catch (e) { }
     if (estado.abierta) guardarAbiertaLocal(equipo.codigo, { tarja_id: estado.abierta.tarja_id, operador: estado.abierta.operador, legajo: estado.abierta.legajo, horom_ini: estado.abierta.horom_ini, ts: estado.abierta.ts_apertura, enviada: true });
     else borrarAbiertaLocal(equipo.codigo);
   } catch (e) {
@@ -146,8 +147,13 @@ function estadoDesdeCache() {
     origen_horom: equipo.origen_horom || '',
     checklist_pendiente: !(ab && ab.fecha === hoyLocal()) && localStorage.getItem('tf_checklist_' + equipo.codigo) !== hoyLocal(),
     items: Datos.itemsPara(equipo.tipo_rodado),
-    motivos_cierre_tercero: ['Se olvidó de cerrar', 'Cambio de turno', 'Otro']
+    motivos_cierre_tercero: ['Se olvidó de cerrar', 'Cambio de turno', 'Otro'],
+    pd: listasPDLocal(equipo.codigo)
   };
+}
+
+function listasPDLocal(codigo) {
+  try { return JSON.parse(localStorage.getItem('tf_pd_' + codigo) || '{}'); } catch (e) { return {}; }
 }
 
 function esMia(abierta) {
@@ -310,7 +316,7 @@ function preguntarEquipo(v, sugerido, alConfirmar) {
 
 function siguienteTrasHorometro() {
   if (estado.checklist_pendiente) return aperturaChecklist();
-  aperturaFirma();
+  aperturaObra();
 }
 
 // ---------- apertura: checklist ----------
@@ -403,7 +409,7 @@ function aperturaChecklist() {
 
   btn.onclick = conError(() => {
     borrador.checklist = items.map((i) => respuestas[i.orden]);
-    aperturaFirma();
+    aperturaObra();
   });
 }
 
@@ -412,12 +418,58 @@ function aperturaChecklistRestaurar(previas, foto, orden) {
   aperturaChecklist();
 }
 
+// ---------- apertura: obra ----------
+
+/** Obra particular, de la misma lista que usaba la app de PARTES DIARIOS; se puede escribir otra. */
+function aperturaObra() {
+  const obras = (estado.pd && estado.pd.obras) || [];
+  const previa = localStorage.getItem('tf_obra_' + equipo.codigo) || '';
+  pintar(`
+    <h2>¿Dónde trabaja hoy ${esc(equipo.codigo)}?</h2>
+    <p class="ayuda">Buscá la obra o escribila si no está.</p>
+    <div class="tarjeta">
+      <input type="text" id="buscaObra" placeholder="Ej.: Avenida Mitre" value="${esc(previa)}" autocomplete="off">
+      <div class="opciones-col" id="listaObras" style="margin-top:.6rem"></div>
+    </div>
+    <button class="principal" id="seguir" disabled>Continuar</button>
+  `);
+  const input = document.getElementById('buscaObra');
+  const lista = document.getElementById('listaObras');
+  const seguir = document.getElementById('seguir');
+  let elegida = '';
+
+  function pintarLista() {
+    const q = normalizarTexto_(input.value);
+    const vis = obras.filter((o) => !q || normalizarTexto_(o).includes(q)).slice(0, 8);
+    lista.innerHTML = vis.map((o) => `<button class="opcion${o === elegida ? ' elegido' : ''}" data-o="${esc(o)}">${esc(o)}</button>`).join('');
+    lista.querySelectorAll('.opcion').forEach((b) => {
+      b.onclick = () => { elegida = b.dataset.o; input.value = elegida; revisar(); pintarLista(); };
+    });
+  }
+  function revisar() {
+    const v = input.value.trim();
+    if (elegida && v !== elegida) elegida = '';
+    seguir.disabled = !v;
+    seguir.textContent = v && !elegida && !obras.some((o) => normalizarTexto_(o) === normalizarTexto_(v)) ? `Usar "${v}"` : 'Continuar';
+  }
+  input.oninput = () => { revisar(); pintarLista(); };
+  pintarLista(); revisar();
+
+  seguir.onclick = () => {
+    const v = input.value.trim();
+    const exacta = obras.find((o) => normalizarTexto_(o) === normalizarTexto_(v));
+    borrador.obra = exacta || v;
+    localStorage.setItem('tf_obra_' + equipo.codigo, borrador.obra);
+    aperturaFirma();
+  };
+}
+
 // ---------- apertura: firma y envío ----------
 
 function aperturaFirma() {
   pintar(`
     <h2>Firmá para empezar</h2>
-    <p class="ayuda">${esc(quien.nombre)} · ${esc(equipo.codigo)} · horómetro ${borrador.horom_ini}</p>
+    <p class="ayuda">${esc(quien.nombre)} · ${esc(equipo.codigo)} · horómetro ${borrador.horom_ini}${borrador.obra ? ' · ' + esc(borrador.obra) : ''}</p>
     <div class="tarjeta">
       <canvas class="firma" id="canvas"></canvas>
       <div style="height:.5rem"></div>
@@ -461,6 +513,7 @@ function aperturaFirma() {
       motivo_correccion: borrador.motivo_correccion || '',
       confirmo_equipo: !!borrador.confirmo_equipo,
       checklist: borrador.checklist || [],
+      obra: borrador.obra || '',
       ...Camara.gpsParaEnvio()
     };
     let r;
@@ -546,6 +599,7 @@ function cierreValor(foto, repetir, tercero) {
         <button class="opcion" data-g="No">No</button>
       </div>
     </div>
+    ${implementosPosibles().length ? '<div class="tarjeta" id="implementos"></div>' : ''}
     <button class="principal" id="enviar" disabled>Cerrar la jornada</button>
   `);
 
@@ -560,6 +614,7 @@ function cierreValor(foto, repetir, tercero) {
   const litros = (id) => Number(document.getElementById(id).value) || 0;
   document.getElementById('rep').onclick = repetir;
   FLUIDOS.forEach((id) => { document.getElementById(id).oninput = () => revisar(); });
+  Implementos.armar(document.getElementById('implementos'), revisar);
   document.querySelectorAll('#grasa .opcion').forEach((b) => {
     b.onclick = () => {
       document.querySelectorAll('#grasa .opcion').forEach((x) => x.classList.remove('elegido'));
@@ -584,6 +639,7 @@ function cierreValor(foto, repetir, tercero) {
     bloqueExceso.hidden = !exceso;
     if (tercero && !motivo) ok = false;
     if (!grasa) ok = false;
+    if (!Implementos.completo()) ok = false;
     if (FLUIDOS.some((id) => Number(document.getElementById(id).value) < 0)) ok = false;
     enviar.disabled = !ok;
   }
@@ -610,6 +666,7 @@ function cierreValor(foto, repetir, tercero) {
       aceite_hidr: litros('fl_hidr'),
       aceite_trans: litros('fl_trans'),
       grasa,
+      implementos: Implementos.valor(),
       ...Camara.gpsParaEnvio()
     };
     if (tercero) datos.motivo_cierre_tercero = motivo;
@@ -631,6 +688,83 @@ function cierreValor(foto, repetir, tercero) {
     document.getElementById('ok').onclick = iniciar;
   });
 }
+
+// ---------- cierre: implementos (batea, carretón, martillo) ----------
+
+function implementosPosibles() {
+  return (estado.pd && estado.pd.implementos) || [];
+}
+
+/**
+ * Para cada implemento que puede usar el equipo: ¿lo usaste? (y marca si
+ * corresponde) y, si sí, su checklist OK/Falla con detalle obligatorio. Se
+ * guarda como un parte aparte en PARTES DIARIOS, como hacía la app anterior.
+ */
+const Implementos = (() => {
+  let uso = {};
+  function armar(cont, alCambiar) {
+    uso = {};
+    if (!cont) return;
+    const lista = implementosPosibles();
+    lista.forEach((imp) => { uso[imp.key] = { usado: null, marca: '', chk: {} }; });
+    function pintarTodo() {
+      cont.innerHTML = '<h3 style="margin-top:0">Implementos</h3>' + lista.map((imp) => {
+        const u = uso[imp.key];
+        return `<div class="imp" data-k="${imp.key}">
+          <label>¿Usaste el implemento ${esc(imp.nombre)}${imp.codigo ? ' (' + esc(imp.codigo) + ')' : ''}?</label>
+          <div class="opciones">
+            <button class="opcion${u.usado === true ? ' elegido' : ''}" data-uso="si">Sí</button>
+            <button class="opcion${u.usado === false ? ' elegido' : ''}" data-uso="no">No</button>
+          </div>
+          ${u.usado && imp.marcas ? `<label>¿Cuál?</label><div class="opciones">${imp.marcas.map((m) => `<button class="opcion${u.marca === m ? ' elegido' : ''}" data-marca="${esc(m)}">${esc(m)}</button>`).join('')}</div>` : ''}
+          ${u.usado ? imp.items.map((it, i) => {
+            const c = u.chk[i] || {};
+            return `<div class="item" data-i="${i}">
+              <div class="texto">${esc(it)}</div>
+              <div class="opciones">
+                <button class="ok${c.estado === 'OK' ? ' elegido' : ''}" data-estado="OK">✓ Bien</button>
+                <button class="problema${c.estado === 'FALLA' ? ' elegido' : ''}" data-estado="FALLA">✕ Falla</button>
+              </div>
+              ${c.estado === 'FALLA' ? `<input type="text" class="det" placeholder="¿Qué viste? (obligatorio)" value="${esc(c.detalle || '')}">` : ''}
+            </div>`;
+          }).join('') : ''}
+        </div>`;
+      }).join('');
+      cont.querySelectorAll('.imp').forEach((div) => {
+        const imp = lista.find((x) => x.key === div.dataset.k);
+        const u = uso[imp.key];
+        div.querySelectorAll('[data-uso]').forEach((b) => { b.onclick = () => { u.usado = b.dataset.uso === 'si'; pintarTodo(); alCambiar(); }; });
+        div.querySelectorAll('[data-marca]').forEach((b) => { b.onclick = () => { u.marca = b.dataset.marca; pintarTodo(); alCambiar(); }; });
+        div.querySelectorAll('.item').forEach((it) => {
+          const i = Number(it.dataset.i);
+          it.querySelectorAll('[data-estado]').forEach((b) => {
+            b.onclick = () => { u.chk[i] = { estado: b.dataset.estado, detalle: '' }; pintarTodo(); alCambiar(); };
+          });
+          const det = it.querySelector('.det');
+          if (det) det.oninput = () => { u.chk[i].detalle = det.value; alCambiar(); };
+        });
+      });
+    }
+    pintarTodo();
+  }
+  function completo() {
+    return implementosPosibles().every((imp) => {
+      const u = uso[imp.key];
+      if (!u || u.usado === null) return false;
+      if (!u.usado) return true;
+      if (imp.marcas && !u.marca) return false;
+      return imp.items.every((_, i) => u.chk[i] && (u.chk[i].estado === 'OK' || (u.chk[i].estado === 'FALLA' && String(u.chk[i].detalle || '').trim())));
+    });
+  }
+  function valor() {
+    return implementosPosibles().filter((imp) => uso[imp.key] && uso[imp.key].usado).map((imp) => ({
+      key: imp.key,
+      marca: uso[imp.key].marca || '',
+      checklist: imp.items.map((item, i) => ({ item, estado: uso[imp.key].chk[i].estado, detalle: String(uso[imp.key].chk[i].detalle || '').trim() }))
+    }));
+  }
+  return { armar, completo, valor };
+})();
 
 // ---------- pantallas finales ----------
 

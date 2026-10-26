@@ -170,7 +170,8 @@ var RUTAS_PUBLICAS = {
   items: rutaItems_,
   estado: estadoDelDia_,
   abrir: abrirTarja_,
-  cerrar: cerrarTarja_
+  cerrar: cerrarTarja_,
+  listas_pd: rutaListasPD_
 };
 
 function doPost(e) {

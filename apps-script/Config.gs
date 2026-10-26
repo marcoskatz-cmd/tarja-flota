@@ -55,7 +55,8 @@ var COLS_TARJAS = [
   'ts_apertura', 'ts_cierre', 'ts_firma',
   'anulada_ts', 'anulada_por', 'anulada_motivo',
   'op_id',
-  'combustible', 'aceite_motor', 'aceite_hidr', 'aceite_trans', 'grasa'
+  'combustible', 'aceite_motor', 'aceite_hidr', 'aceite_trans', 'grasa',
+  'implementos'
 ];
 HOJAS.TARJAS = COLS_TARJAS;
 

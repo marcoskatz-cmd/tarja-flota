@@ -104,8 +104,14 @@ function estadoDelDia_(p) {
     origen_horom: String(equipo.origen_horom || ''),
     checklist_pendiente: !checklistHecho,
     items: itemsDe_(equipo.tipo_rodado),
-    motivos_cierre_tercero: MOTIVO_CIERRE_TERCERO
+    motivos_cierre_tercero: MOTIVO_CIERRE_TERCERO,
+    pd: listasPDSeguras_(equipo.codigo)
   };
+}
+
+/** Obras e implementos de PARTES DIARIOS; si esa planilla no responde, listas vacías. */
+function listasPDSeguras_(codigo) {
+  try { return rutaListasPD_({ equipo: codigo }); } catch (e) { return { obras: [], implementos: [] }; }
 }
 
 function tarjaPublica_(t) {
@@ -206,7 +212,7 @@ function abrirTarja_(p) {
     hojaTarjas_(Number(fecha.slice(0, 4)));
     agregar_(hoja, {
       id: id, equipo: equipo.codigo, fecha: fecha, estado: 'abierta',
-      legajo: legajo, operador: operador, operador_manual: manual ? 'SI' : 'NO', obra: equipo.lugar || '',
+      legajo: legajo, operador: operador, operador_manual: manual ? 'SI' : 'NO', obra: String(p.obra || '').trim() || equipo.lugar || '',
       horom_ini: horomIni, horom_fin: '', horas: '',
       foto_horom_ini: urlHorom, foto_horom_fin: '',
       horom_ini_sugerido: sugerido,
@@ -358,11 +364,13 @@ function cerrarTarja_(p) {
     var conGps = gpsValido_(p.lat, p.lon);
     var horomFin = Number(p.horom_fin);
     var fluidos = fluidosDe_(p);
+    var implementos = implementosDe_(p, t.equipo);
 
     hojaTarjas_(fecha.slice(0, 4));
     actualizar_(t._hoja, t._fila, {
       combustible: fluidos.combustible, aceite_motor: fluidos.aceite_motor,
       aceite_hidr: fluidos.aceite_hidr, aceite_trans: fluidos.aceite_trans, grasa: fluidos.grasa,
+      implementos: implementos.length ? JSON.stringify(implementos) : '',
       estado: 'cerrada', horom_fin: horomFin, horas: calc.horas,
       foto_horom_fin: urlHorom, ts_cierre: tsStr_(),
       lat_fin: conGps ? Number(p.lat) : '', lon_fin: conGps ? Number(p.lon) : '',
