@@ -56,6 +56,10 @@ function hojaFake(nombre) {
       },
       getValue: () => (filas[fila - 1] || [])[col - 1] === undefined ? '' : filas[fila - 1][col - 1],
       setNumberFormat: (f) => { formatos[col] = f; return this; },
+      setFormula: (f) => { while (filas.length < fila) filas.push([]); filas[fila - 1][col - 1] = f; },
+      getFormulas: () => { const out = []; for (let i = 0; i < nFilas; i++) { const f = filas[fila - 1 + i] || []; const r = []; for (let j = 0; j < nCols; j++) { const v = f[col - 1 + j]; r.push(typeof v === 'string' && v.charAt(0) === '=' ? v : ''); } out.push(r); } return out; },
+      getRichTextValues: () => { const out = []; for (let i = 0; i < nFilas; i++) { const r = []; for (let j = 0; j < nCols; j++) r.push({ getLinkUrl: () => null, getRuns: () => [] }); out.push(r); } return out; },
+      setBackground: () => this,
       setFontWeight: () => this
     };
   }

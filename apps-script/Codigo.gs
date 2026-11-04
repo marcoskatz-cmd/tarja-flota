@@ -40,6 +40,7 @@ function doGet(e) {
     var aplicar = String(p.aplicar) === 'si';
     switch (p.action) {
       case 'sync_fuentes': return json_({ ok: true, data: syncFuentes_() });
+      case 'importar_partes': return json_({ ok: true, data: importarPartes_(Number(p.max) || 20000) });
       case 'sembrar_horometros': return json_({ ok: true, data: sembrarHorometros_() });
       case 'instalar_triggers': return json_({ ok: true, data: instalarTriggers_() });
       case 'borrar_tarja': return json_({ ok: true, data: borrarTarja_(p.equipo, p.fecha, aplicar) });
@@ -143,6 +144,7 @@ function rutaItems_() {
 function rutaPublicoMapa_() { return panelMapa_(); }
 
 function rutaPublicoTarjas_(p) {
+  try { importarPartesSiToca_(); } catch (e0) { }
   var e = equipoPorCodigo_(p.codigo);
   var max = Math.min(Number(p.max) || 30, 100);
   var tarjas = tarjasDe_(e.codigo).filter(function (t) { return String(t.estado) !== 'anulada'; }).slice(0, max)

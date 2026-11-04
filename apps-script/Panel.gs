@@ -24,6 +24,7 @@ function panelHoy_(p) {
   var fecha = hoyStr_();
   var hoja = nombreHojaTarjas_(fecha);
   hojaTarjas_(Number(fecha.slice(0, 4)));
+  try { importarPartesSiToca_(); } catch (e) { }
   var tarjasHoy = leer_(hoja).filter(function (t) { return String(t.fecha) === fecha && String(t.estado) !== 'anulada'; });
   var abiertas = {};
   leer_('ABIERTAS').forEach(function (a) { abiertas[String(a.equipo).toUpperCase()] = a; });

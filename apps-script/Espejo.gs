@@ -429,6 +429,118 @@ function urlDeCeldaPD_(formula, rt) {
   return '';
 }
 
+// ---------- lectura: PARTES DIARIOS alimenta las tarjas ----------
+
+/**
+ * PARTES DIARIOS es la fuente de verdad: ahí escriben la app anterior, esta
+ * app (vía espejarParte_) y las cargas a mano. Esta función trae a TARJAS_<año>
+ * cada parte que todavía no está, como jornada cerrada con origen 'PD', para
+ * que el panel, los horómetros e INGECOV muestren todo, se cargue por donde se
+ * cargue. Identifica cada parte por equipo + fecha + horómetros (no duplica
+ * los que nacieron en esta app) y saltea implementos y equipos desconocidos.
+ * Devuelve cuántas jornadas agregó.
+ */
+function importarPartes_(maxFilas) {
+  var sh = ssEspejo_().getSheetByName(ESPEJO.PARTES);
+  if (!sh || sh.getLastRow() < 2) return 0;
+  var heads = encabezadosPD_(sh);
+  var ultima = sh.getLastRow();
+  var desde = Math.max(2, ultima - (Number(maxFilas) || 1500) + 1);
+  var n = ultima - desde + 1;
+  var vals = sh.getRange(desde, 1, n, heads.length).getValues();
+  var colG = heads.indexOf('UBICACIÓN GPS') + 1;
+  var gps = colG ? sh.getRange(desde, colG, n, 1).getRichTextValues() : [];
+  var formulas = colG ? sh.getRange(desde, colG, n, 1).getFormulas() : [];
+  var col = function (nombre) { return heads.indexOf(nombre); };
+  var iF = col('FECHA'), iC = col('CÓDIGO'), iO = col('OPERARIO'), iObra = col('UBICACIÓN/OBRA PARTICULAR');
+  var iHE = col('HORÓMETRO ENTRADA'), iHS = col('HORÓMETRO SALIDA'), iT = col('TIEMPO TRABAJO (HR)');
+  var iCo = col('COMBUSTIBLE (L)'), iAM = col('ACEITE MOTOR (L)'), iAH = col('ACEITE HIDRÁULICO (L)'), iAT = col('ACEITE TRANSMISIÓN (L)'), iG = col('GRASA');
+
+  var equipos = {};
+  leer_('EQUIPOS').forEach(function (e) { equipos[String(e.codigo).trim().toUpperCase()] = e; });
+
+  var existentes = {}, hojasVistas = {};
+  function claveDe_(cod, fecha, he, hs) { return cod + '|' + fecha + '|' + he + '|' + hs; }
+  function cargarAnio_(anio) {
+    if (hojasVistas[anio]) return;
+    hojasVistas[anio] = true;
+    if (!ss_().getSheetByName('TARJAS_' + anio)) return;
+    leer_('TARJAS_' + anio).forEach(function (t) {
+      if (String(t.estado) === 'anulada') return;
+      existentes[claveDe_(String(t.equipo).toUpperCase(), String(t.fecha), numPD_(t.horom_ini), numPD_(t.horom_fin))] = true;
+    });
+  }
+
+  var agregadas = 0, ultimoPorEquipo = {};
+  for (var k = 0; k < n; k++) {
+    var f = vals[k][iF];
+    if (!(f instanceof Date)) continue;
+    var cod = String(vals[k][iC] || '').trim().toUpperCase();
+    if (!cod || esImplemento_(cod) || !equipos[cod]) continue;
+    var he = numPD_(vals[k][iHE]), hs = numPD_(vals[k][iHS]);
+    if (he === '' || hs === '' || hs < he) continue;
+    var fecha = Utilities.formatDate(f, CFG.TZ, 'yyyy-MM-dd');
+    var anio = fecha.slice(0, 4);
+    cargarAnio_(anio);
+    var clave = claveDe_(cod, fecha, he, hs);
+    if (existentes[clave]) continue;
+    existentes[clave] = true;
+
+    var horas = iT === -1 ? '' : numPD_(vals[k][iT]);
+    if (horas === '') horas = Math.round((hs - he) * 10) / 10;
+    var url = colG ? urlDeCeldaPD_(formulas[k][0], gps[k][0]) : '';
+    var m = url && String(url).match(/(-?\d{1,2}\.\d+)\s*(?:,|%2C)\s*(-?\d{1,3}\.\d+)/i);
+    var conGps = !!(m && gpsValido_(m[1], m[2]));
+    var operador = String(vals[k][iO] || '').trim();
+    hojaTarjas_(Number(anio));
+    agregar_('TARJAS_' + anio, {
+      id: Utilities.getUuid(), equipo: cod, fecha: fecha, estado: 'cerrada',
+      legajo: '', operador: operador, operador_manual: 'NO', obra: iObra === -1 ? '' : String(vals[k][iObra] || ''),
+      horom_ini: he, horom_fin: hs, horas: horas,
+      correccion_horom: 'NO', excepcion: 'NO', checklist_hecho: 'SI',
+      lat: conGps ? Number(m[1]) : '', lon: conGps ? Number(m[2]) : '',
+      cierre_tercero: 'NO',
+      ts_apertura: fecha + ' 00:00:00', ts_cierre: fecha + ' 00:00:00',
+      op_id: 'PD:' + fecha + ':' + cod + ':' + he + ':' + hs,
+      combustible: iCo === -1 ? '' : numPD_(vals[k][iCo]), aceite_motor: iAM === -1 ? '' : numPD_(vals[k][iAM]),
+      aceite_hidr: iAH === -1 ? '' : numPD_(vals[k][iAH]), aceite_trans: iAT === -1 ? '' : numPD_(vals[k][iAT]),
+      grasa: iG === -1 ? '' : String(vals[k][iG] || '')
+    });
+    agregadas++;
+    var u = ultimoPorEquipo[cod];
+    if (!u || fecha > u.fecha || (fecha === u.fecha && hs > u.hs)) ultimoPorEquipo[cod] = { fecha: fecha, hs: hs, operador: operador };
+  }
+
+  // Horómetro y último operario del equipo: solo si el parte es más nuevo que lo que ya tenía.
+  Object.keys(ultimoPorEquipo).forEach(function (cod) {
+    var e = equipos[cod], u = ultimoPorEquipo[cod];
+    var ultimaTarja = String(e.ultima_tarja || '');
+    if (ultimaTarja > u.fecha) return;
+    var cambios = { ultimo_operador: u.operador, ultima_tarja: u.fecha };
+    if (sinHorometro_(e) || Number(e.horom_tarja) < u.hs || ultimaTarja < u.fecha) {
+      cambios.horom_tarja = u.hs; cambios.origen_horom = 'PARTES';
+    }
+    actualizar_('EQUIPOS', e._fila, cambios);
+  });
+  if (agregadas) log_('sistema', 'IMPORT_PARTES', agregadas + ' jornadas desde PARTES DIARIOS', '');
+  setProp_('ULTIMO_IMPORT_PARTES', String(Date.now()));
+  return agregadas;
+}
+
+/** Como mucho una vez cada 15 minutos, al pedir el panel o las tarjas públicas. */
+function importarPartesSiToca_() {
+  var ult = Number(prop_('ULTIMO_IMPORT_PARTES') || 0);
+  if (Date.now() - ult < 15 * 60 * 1000) return;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return;
+  try { importarPartes_(); }
+  catch (e) { log_('sistema', 'IMPORT_PARTES_ERROR', '', String(e && e.message || e)); }
+  finally { lock.releaseLock(); }
+}
+
+/** Para correr a mano desde el editor: importa todo PARTES DIARIOS (hasta 20000 filas). */
+function importarPartes() { return importarPartes_(20000); }
+
 /**
  * Última ubicación de cada equipo según la columna UBICACIÓN GPS (el link
  * "Ver ubicación") de PARTES DIARIOS. Actualiza lat/lon/ts_pos en EQUIPOS solo
