@@ -471,7 +471,7 @@ function importarPartes_(maxFilas) {
     });
   }
 
-  var agregadas = 0, ultimoPorEquipo = {};
+  var agregadas = 0, ultimoPorEquipo = {}, porAnio = {};
   for (var k = 0; k < n; k++) {
     var f = vals[k][iF];
     if (!(f instanceof Date)) continue;
@@ -492,8 +492,8 @@ function importarPartes_(maxFilas) {
     var m = url && String(url).match(/(-?\d{1,2}\.\d+)\s*(?:,|%2C)\s*(-?\d{1,3}\.\d+)/i);
     var conGps = !!(m && gpsValido_(m[1], m[2]));
     var operador = String(vals[k][iO] || '').trim();
-    hojaTarjas_(Number(anio));
-    agregar_('TARJAS_' + anio, {
+    if (!porAnio[anio]) porAnio[anio] = [];
+    porAnio[anio].push({
       id: Utilities.getUuid(), equipo: cod, fecha: fecha, estado: 'cerrada',
       legajo: '', operador: operador, operador_manual: 'NO', obra: iObra === -1 ? '' : String(vals[k][iObra] || ''),
       horom_ini: he, horom_fin: hs, horas: horas,
@@ -510,6 +510,16 @@ function importarPartes_(maxFilas) {
     var u = ultimoPorEquipo[cod];
     if (!u || fecha > u.fecha || (fecha === u.fecha && hs > u.hs)) ultimoPorEquipo[cod] = { fecha: fecha, hs: hs, operador: operador };
   }
+
+  // Escritura por lote: una sola setValues por año (fila por fila tarda 0,6 s cada una).
+  Object.keys(porAnio).forEach(function (anio) {
+    hojaTarjas_(Number(anio));
+    var nombre = 'TARJAS_' + anio, cols = colsDe_(nombre), sh2 = hoja_(nombre);
+    var filas = porAnio[anio].map(function (o) {
+      return cols.map(function (c) { return o[c] === undefined || o[c] === null ? '' : o[c]; });
+    });
+    sh2.getRange(sh2.getLastRow() + 1, 1, filas.length, cols.length).setValues(filas);
+  });
 
   // Horómetro y último operario del equipo: solo si el parte es más nuevo que lo que ya tenía.
   Object.keys(ultimoPorEquipo).forEach(function (cod) {
