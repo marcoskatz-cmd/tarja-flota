@@ -59,9 +59,10 @@ const S = {
 
 const ESTADO = {
   abierta: { orden: 0, txt: (e) => `En curso · ${esc(e.desde)}` },
-  cerrada: { orden: 1, txt: (e) => `${num(e.horas)} h hoy` },
-  sin_tarja: { orden: 2, txt: () => 'Sin tarja hoy' },
-  sin_actividad: { orden: 3, txt: () => 'Sin actividad' }
+  trabajando: { orden: 1, txt: () => 'Cargó combustible hoy' },
+  cerrada: { orden: 2, txt: (e) => `${num(e.horas)} h hoy` },
+  sin_tarja: { orden: 3, txt: () => 'Sin tarja hoy' },
+  sin_actividad: { orden: 4, txt: () => 'Sin actividad' }
 };
 
 // ---------- arranque ----------
@@ -101,7 +102,7 @@ function fallasDe(codigo) {
 
 function pintar() {
   const c = { abierta: 0, cerrada: 0, sin_tarja: 0 };
-  S.hoy.equipos.forEach((e) => { if (c[e.estado] != null) c[e.estado]++; });
+  S.hoy.equipos.forEach((e) => { const k = e.estado === 'trabajando' ? 'abierta' : e.estado; if (c[k] != null) c[k]++; });
   const kpi = (id, n, txt) => `<button class="kpi ${id} ${S.kpi === id ? 'activa' : ''}" data-kpi="${id}"><b>${n}</b><span>${txt}</span></button>`;
   const tab = (id, txt, n) => `<button class="${S.tab === id ? 'activa' : ''}" data-tab="${id}">${txt}${n != null ? `<i>${n}</i>` : ''}</button>`;
   const diag = S.hoy.diagnostico || [];
@@ -181,7 +182,7 @@ function verEquipos(cont) {
 
 function filaEquipo(e) {
   const fallas = fallasDe(e.codigo).length;
-  const meta = e.estado === 'abierta' || e.estado === 'cerrada'
+  const meta = e.estado === 'abierta' || e.estado === 'cerrada' || e.estado === 'trabajando'
     ? esc(e.operador) + (e.lugar ? ' · ' + esc(e.lugar) : '')
     : (e.ultima_tarja ? `Última ${esc(e.ultima_tarja)}${e.operador ? ' · ' + esc(e.operador) : ''}` : 'Nunca tarjó') + (e.lugar ? ' · ' + esc(e.lugar) : '');
   return `

@@ -34,6 +34,8 @@ function panelHoy_(p) {
   });
   var fallasHoy = leer_('CHECKLIST_RESP').filter(function (r) { return String(r.fecha) === fecha && String(r.estado) === 'PROBLEMA'; });
   var diasSinAct = configNum_('DIAS_SIN_ACTIVIDAD') || 7;
+  var combHoy = {};
+  try { combHoy = equiposConCombustibleHoy_() || {}; } catch (e) { combHoy = {}; }
 
   var equipos = activosTarja_().map(function (e) {
     var c = String(e.codigo).toUpperCase();
@@ -44,6 +46,7 @@ function panelHoy_(p) {
     var estado;
     if (ab) estado = 'abierta';
     else if (mias.length) estado = 'cerrada';
+    else if (combHoy[c] !== undefined) estado = 'trabajando';
     else {
       var d = diasEntre_(String(e.ultima_tarja || ''), fecha);
       estado = (d === null || d > diasSinAct) ? 'sin_actividad' : 'sin_tarja';
@@ -52,7 +55,7 @@ function panelHoy_(p) {
     return {
       codigo: String(e.codigo), descripcion: String(e.descripcion || ''), lugar: String(e.lugar || ''),
       estado: estado, horas: Math.round(horas * 10) / 10, jornadas: mias.length,
-      operador: ab ? String(ab.operador) : (ultima ? String(ultima.operador) : String(e.ultimo_operador || '')),
+      operador: ab ? String(ab.operador) : (ultima ? String(ultima.operador) : (combHoy[c] || String(e.ultimo_operador || ''))),
       desde: ab ? String(ab.ts_apertura).slice(11, 16) : '',
       ultima_tarja: String(e.ultima_tarja || ''),
       horom_tarja: e.horom_tarja === '' ? '' : Number(e.horom_tarja),

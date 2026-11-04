@@ -533,8 +533,95 @@ function importarPartes_(maxFilas) {
     actualizar_('EQUIPOS', e._fila, cambios);
   });
   if (agregadas) log_('sistema', 'IMPORT_PARTES', agregadas + ' jornadas desde PARTES DIARIOS', '');
+  try { importarFallas_(maxFilas); } catch (e) { log_('sistema', 'IMPORT_FALLAS_ERROR', '', String(e && e.message || e)); }
   setProp_('ULTIMO_IMPORT_PARTES', String(Date.now()));
   return agregadas;
+}
+
+/**
+ * Fallas de la app anterior: la hoja CHECKLISTS tiene una fila por parte con
+ * N° FALLAS y el DETALLE COMPLETO ("ítem: FALLA — detalle" por línea). Por cada
+ * falla que todavía no está crea la respuesta PROBLEMA en CHECKLIST_RESP y el
+ * pendiente abierto en PENDIENTES, colgados de la jornada importada del mismo
+ * equipo y fecha (tarja_id 'PD' si no la encuentra). Devuelve cuántas agregó.
+ */
+function importarFallas_(maxFilas) {
+  var sh = ssEspejo_().getSheetByName(ESPEJO.CHECKLISTS);
+  if (!sh || sh.getLastRow() < 2) return 0;
+  var ultima = sh.getLastRow();
+  var desde = Math.max(2, ultima - (Number(maxFilas) || 1500) + 1);
+  var vals = sh.getRange(desde, 1, ultima - desde + 1, 9).getValues(); // FECHA, EQUIPO, CÓDIGO, OPERARIO, GPS, ÍTEMS, N° FALLAS, RESUMEN, DETALLE
+
+  var equipos = {};
+  leer_('EQUIPOS').forEach(function (e) { equipos[String(e.codigo).trim().toUpperCase()] = e; });
+  var existentes = {};
+  leer_('CHECKLIST_RESP').forEach(function (r) {
+    if (String(r.estado) === 'PROBLEMA') existentes[String(r.equipo).toUpperCase() + '|' + r.fecha + '|' + normalizarTexto_(r.item)] = true;
+  });
+  var tarjas = {}, hojasVistas = {};
+  function tarjaDe_(cod, fecha) {
+    var anio = fecha.slice(0, 4);
+    if (!hojasVistas[anio]) {
+      hojasVistas[anio] = true;
+      if (ss_().getSheetByName('TARJAS_' + anio)) leer_('TARJAS_' + anio).forEach(function (t) {
+        if (String(t.estado) !== 'anulada') tarjas[String(t.equipo).toUpperCase() + '|' + t.fecha] = String(t.id);
+      });
+    }
+    return tarjas[cod + '|' + fecha] || 'PD';
+  }
+
+  var resp = [], pend = [], ts = tsStr_();
+  vals.forEach(function (v) {
+    if (!(v[0] instanceof Date) || !(Number(v[6]) > 0)) return;
+    var cod = String(v[2] || '').trim().toUpperCase();
+    if (!cod || esImplemento_(cod) || !equipos[cod]) return;
+    var fecha = Utilities.formatDate(v[0], CFG.TZ, 'yyyy-MM-dd');
+    var orden = 0;
+    String(v[8] || '').split('\n').forEach(function (linea) {
+      orden++;
+      var m = linea.match(/^(.*?):\s*FALLA\s*(?:—|-)?\s*(.*)$/);
+      if (!m) return;
+      var item = m[1].trim(), detalle = m[2].trim();
+      var clave = cod + '|' + fecha + '|' + normalizarTexto_(item);
+      if (existentes[clave]) return;
+      existentes[clave] = true;
+      var tarjaId = tarjaDe_(cod, fecha), id = uuid_();
+      resp.push({ id: id, tarja_id: tarjaId, equipo: cod, fecha: fecha, orden: orden, item: item, estado: 'PROBLEMA', foto: '', comentario: detalle, ts: ts });
+      pend.push({ id: uuid_(), tarja_id: tarjaId, equipo: cod, fecha_apertura: fecha, orden: orden, item: item, comentario: detalle, foto: '', estado: 'abierto', fecha_cierre: '', motivo_cierre: '', cerrado_por: '' });
+    });
+  });
+  [['CHECKLIST_RESP', resp], ['PENDIENTES', pend]].forEach(function (par) {
+    if (!par[1].length) return;
+    var cols = colsDe_(par[0]), sh2 = hoja_(par[0]);
+    var filas = par[1].map(function (o) { return cols.map(function (c) { return o[c] === undefined ? '' : o[c]; }); });
+    sh2.getRange(sh2.getLastRow() + 1, 1, filas.length, cols.length).setValues(filas);
+  });
+  if (resp.length) log_('sistema', 'IMPORT_FALLAS', resp.length + ' fallas desde CHECKLISTS', '');
+  return resp.length;
+}
+
+/**
+ * Equipos que cargaron combustible hoy en la planilla de Casares. Con la app
+ * anterior no hay apertura (el parte se escribe recién al cerrar), así que la
+ * carga de combustible es la señal de que el equipo está trabajando.
+ * Cacheado 15 minutos.
+ */
+function equiposConCombustibleHoy_() {
+  return conCache_('comb_hoy_' + hoyStr_(), 15 * 60, function () {
+    var id = config_('SHEET_CASARES_ID');
+    var t = id ? leerPestana_(id, ['ENTREGAS']) : null;
+    if (!t) return {};
+    var iCod = idx_(t.header, ['CÓDIGO', 'CODIGO']), iFec = idx_(t.header, ['FECHA']), iOpe = idx_(t.header, ['OPERARIO', 'CHOFER']);
+    if (iCod < 0 || iFec < 0) return {};
+    var hoy = hoyStr_(), out = {};
+    for (var k = t.filas.length - 1; k >= 0 && k >= t.filas.length - 400; k--) {
+      var f = t.filas[k];
+      if (fechaIso_(f[iFec]) !== hoy) continue;
+      var cod = at_(f, iCod).toUpperCase();
+      if (cod && !out[cod]) out[cod] = at_(f, iOpe);
+    }
+    return out;
+  });
 }
 
 /** Como mucho una vez cada 15 minutos, al pedir el panel o las tarjas públicas. */

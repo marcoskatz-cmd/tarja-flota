@@ -156,7 +156,8 @@ function crearContexto(opciones) {
       DigestAlgorithm: { SHA_256: 'SHA_256' },
       Charset: { UTF_8: 'UTF_8' }
     },
-    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, tryLock: () => true, releaseLock: () => {} }) },
+    CacheService: { getScriptCache: () => ({ get: () => null, put: () => {}, remove: () => {} }) },
     ContentService: {
       createTextOutput: (s) => ({ __texto: s, setMimeType: function () { return this; } }),
       MimeType: { JSON: 'JSON' }
