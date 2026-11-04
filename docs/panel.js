@@ -353,7 +353,7 @@ function enlazarFallas(raiz, despues) {
 function verFallas(cont) {
   const p = S.pend.pendientes;
   cont.innerHTML = p.length
-    ? `<p class="sub">Problemas marcados en el checklist que todavía no se resolvieron.</p><div class="lista">${p.map(filaFalla).join('')}</div>`
+    ? `<p class="sub">Problemas marcados en el checklist que todavía no se resolvieron.</p><div class="lista">${p.map((f) => filaFalla(f, false)).join('')}</div>`
     : '<div class="vacio">No hay fallas abiertas. Todo al día.</div>';
   enlazarFotos(cont);
   enlazarFallas(cont);
