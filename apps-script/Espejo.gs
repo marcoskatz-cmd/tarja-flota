@@ -633,6 +633,7 @@ function importarPartesSiToca_() {
   try { importarPartes_(); }
   catch (e) { log_('sistema', 'IMPORT_PARTES_ERROR', '', String(e && e.message || e)); }
   finally { lock.releaseLock(); }
+  sincronizarTrabajosPendientesSiToca_();
 }
 
 /** Para correr a mano desde el editor: importa todo PARTES DIARIOS (hasta 20000 filas). */

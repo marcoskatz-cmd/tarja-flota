@@ -172,6 +172,7 @@ function cerrarPendiente_(p, u) {
   if (MOTIVO_CIERRE_PENDIENTE.indexOf(motivo) < 0) throw new Error('Elegí un motivo de la lista: ' + MOTIVO_CIERRE_PENDIENTE.join(', ') + '.');
   actualizar_('PENDIENTES', x._fila, { estado: 'cerrado', fecha_cierre: hoyStr_(), motivo_cierre: motivo, cerrado_por: u.nombre });
   log_(u.nombre, 'CERRAR_PENDIENTE', x.equipo + ' · ' + x.item, motivo);
+  sincronizarTrabajosPendientesSeguro_();
   return { ok: true };
 }
 

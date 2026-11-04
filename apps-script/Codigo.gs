@@ -41,6 +41,10 @@ function doGet(e) {
     switch (p.action) {
       case 'sync_fuentes': return json_({ ok: true, data: syncFuentes_() });
       case 'compartir_fotos': return json_({ ok: true, data: compartirFotos_() });
+      case 'diag_trab_pend2': return json_({ ok: true, data: diagnosticoTrabajosPendientes2_(aplicar) });
+      case 'diag_trab_pend': return json_({ ok: true, data: diagnosticoTrabajosPendientes_() });
+      case 'sync_trab_pend': return json_({ ok: true, data: sincronizarTrabajosPendientes_(String(p.ver) === 'si') });
+      case 'limpiar_trab_pend': return json_({ ok: true, data: limpiarTrabajosPendientesRotos_(aplicar) });
       case 'importar_partes': return json_({ ok: true, data: importarPartes_(Number(p.max) || 20000) });
       case 'sembrar_horometros': return json_({ ok: true, data: sembrarHorometros_() });
       case 'instalar_triggers': return json_({ ok: true, data: instalarTriggers_() });

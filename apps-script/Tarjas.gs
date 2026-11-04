@@ -314,6 +314,7 @@ function guardarChecklist_(tarjaId, equipo, fecha, operador, items, respuestas) 
       } catch (eAv) { }
     }
   });
+  if (respuestas.some(function (r) { return String(r.estado).toUpperCase() === 'PROBLEMA'; })) sincronizarTrabajosPendientesSeguro_();
 }
 
 function registrarOperadorManual_(nombre) {

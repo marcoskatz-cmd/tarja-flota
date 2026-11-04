@@ -4,7 +4,7 @@ const { crearContexto, cargarHoja } = require('./helpers');
 const FOTO = 'data:image/jpeg;base64,AAAA';
 
 function armar(hoy, equipos) {
-  const ctx = crearContexto({ cargar: ['Config.gs', 'Reglas.gs', 'Planillas.gs', 'Fotos.gs', 'Tarjas.gs', 'Espejo.gs'], hoy: hoy || '2026-10-19' });
+  const ctx = crearContexto({ cargar: ['Config.gs', 'Reglas.gs', 'Planillas.gs', 'Fotos.gs', 'Tarjas.gs', 'Espejo.gs', 'TrabajosPendientes.gs'], hoy: hoy || '2026-10-19' });
   ctx.setupCompleto_();
   cargarHoja(ctx.ss_(), 'EQUIPOS', ctx.HOJAS.EQUIPOS, equipos || [
     { codigo: 'CF-03', descripcion: 'Cargadora', tipo_rodado: 'rodante', lugar: 'Autovías', activo_tarja: 'SI', horom_tarja: 4800, origen_horom: 'TARJA' },

@@ -9,7 +9,7 @@ const vm = require('vm');
 const RAIZ = path.join(__dirname, '..');
 
 /** Archivos que se cargan en el contexto, en orden. */
-const CARGAR = ['Config.gs', 'Reglas.gs', 'Planillas.gs', 'Fotos.gs', 'IngecoAvisos.gs', 'Fuentes.gs', 'Tarjas.gs', 'Espejo.gs', 'Sesion.gs', 'Panel.gs', 'Triggers.gs', 'Mantenimiento.gs', 'Codigo.gs'];
+const CARGAR = ['Config.gs', 'Reglas.gs', 'Planillas.gs', 'Fotos.gs', 'IngecoAvisos.gs', 'Fuentes.gs', 'Tarjas.gs', 'Espejo.gs', 'TrabajosPendientes.gs', 'Sesion.gs', 'Panel.gs', 'Triggers.gs', 'Mantenimiento.gs', 'Codigo.gs'];
 
 // ---------- stub de Sheets en memoria ----------
 
@@ -134,7 +134,8 @@ function crearContexto(opciones) {
     },
     SpreadsheetApp: {
       create: (nombre) => { const id = 'ss' + (++contador); planillas[id] = spreadsheetFake(id, nombre); return planillas[id]; },
-      openById: (id) => { if (!planillas[id]) throw new Error('Planilla inexistente: ' + id); return planillas[id]; }
+      openById: (id) => { if (!planillas[id]) throw new Error('Planilla inexistente: ' + id); return planillas[id]; },
+      flush: () => {}
     },
     DriveApp: {
       createFolder: () => ({ getId: () => 'carpeta1' }),

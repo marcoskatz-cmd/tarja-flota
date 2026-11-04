@@ -7,7 +7,7 @@ const HEADS = ['FECHA', 'EQUIPO', 'CÓDIGO', 'N° SERIE/PATENTE', 'OPERARIO', 'U
   'ACEITE TRANSMISIÓN (L)', 'COMBUSTIBLE (L)', 'GRASA', 'FIRMA', 'OBRA GENERAL', 'ENLACE'];
 
 function armar(partes, equipos, checklists) {
-  const ctx = crearContexto({ cargar: ['Config.gs', 'Reglas.gs', 'Planillas.gs', 'Fotos.gs', 'Fuentes.gs', 'Tarjas.gs', 'Espejo.gs', 'Sesion.gs', 'Panel.gs', 'Triggers.gs', 'Mantenimiento.gs', 'Codigo.gs'], hoy: '2026-11-04' });
+  const ctx = crearContexto({ cargar: ['Config.gs', 'Reglas.gs', 'Planillas.gs', 'Fotos.gs', 'Fuentes.gs', 'Tarjas.gs', 'Espejo.gs', 'TrabajosPendientes.gs', 'Sesion.gs', 'Panel.gs', 'Triggers.gs', 'Mantenimiento.gs', 'Codigo.gs'], hoy: '2026-11-04' });
   ctx.setupCompleto_();
   cargarHoja(ctx.ss_(), 'EQUIPOS', ctx.HOJAS.EQUIPOS, equipos || [
     { codigo: 'CF-03', descripcion: 'Cargadora', tipo_rodado: 'rodante', activo_tarja: 'SI', horom_tarja: 4800, origen_horom: 'TARJA', ultima_tarja: '2026-10-20' },
