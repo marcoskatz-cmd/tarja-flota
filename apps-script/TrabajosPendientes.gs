@@ -16,7 +16,7 @@
  * Las columnas se buscan por encabezado (idx_), no por posición.
  */
 
-var TP_ESTADO_NUEVO = 'A revisar';
+var TP_ESTADO_NUEVO = 'Pendiente'; // Marcos (4-nov-2026): el desplegable de la hoja no admite "A revisar"; la fila se distingue por origen "Tarja · …"
 var TP_ESTADO_RESUELTO = 'Realizado';
 
 function hojaTrabajosPendientes_() {

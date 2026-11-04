@@ -26,7 +26,7 @@ const leerTP = (tp) => tp.getSheetByName('TRABAJOS PENDIENTES').getDataRange().g
   .map((f) => { const o = {}; HEADS.forEach((c, i) => { o[c] = f[i] === undefined ? '' : f[i]; }); return o; });
 
 module.exports = {
-  'una falla abierta de la tarja se escribe en TRABAJOS PENDIENTES como "A revisar"': () => {
+  'una falla abierta de la tarja se escribe en TRABAJOS PENDIENTES como Pendiente con origen Tarja': () => {
     const { ctx, tp } = armar(
       [{ 'CÓDIGO': 'CF-05', EQUIPO: 'CF-05 — Volvo', FECHA: new Date(2026, 6, 27), 'DESCRIPCIÓN TRABAJOS': 'ruido', 'ORIGEN/RESPONSABLE': 'Matías', ESTADO: 'Pendiente' }],
       [{ id: 'P1', tarja_id: 'T1', equipo: 'CF-03', fecha_apertura: '2026-11-02', orden: 3, item: 'Luces', comentario: 'no anda la trasera', foto: 'https://drive/x', estado: 'abierto' }]
@@ -41,7 +41,7 @@ module.exports = {
     assert.strictEqual(f.FECHA, '02/11/2026'); // texto: la hoja rechaza Date por script
     assert.ok(/Luces/.test(f['DESCRIPCIÓN TRABAJOS']) && /no anda la trasera/.test(f['DESCRIPCIÓN TRABAJOS']) && /drive\/x/.test(f['DESCRIPCIÓN TRABAJOS']));
     assert.strictEqual(f['ORIGEN/RESPONSABLE'], 'Tarja · Pérez Juan');
-    assert.strictEqual(f.ESTADO, 'A revisar');
+    assert.strictEqual(f.ESTADO, 'Pendiente');
     assert.strictEqual(f['N° SERIE/PATENTE'], 'AB123CD');
     assert.strictEqual(f['ID TRABAJO'], 'P1');
     // segunda corrida: nada nuevo
@@ -65,7 +65,7 @@ module.exports = {
 
   'si la cierran en el panel de la tarja, la hoja pasa a Realizado': () => {
     const { ctx, tp } = armar(
-      [{ 'CÓDIGO': 'CF-03', EQUIPO: 'x', FECHA: new Date(2026, 10, 2), 'DESCRIPCIÓN TRABAJOS': 'Luces', 'ORIGEN/RESPONSABLE': 'Tarja · Pérez', ESTADO: 'A revisar', 'ID TRABAJO': 'P1' }],
+      [{ 'CÓDIGO': 'CF-03', EQUIPO: 'x', FECHA: new Date(2026, 10, 2), 'DESCRIPCIÓN TRABAJOS': 'Luces', 'ORIGEN/RESPONSABLE': 'Tarja · Pérez', ESTADO: 'Pendiente', 'ID TRABAJO': 'P1' }],
       [{ id: 'P1', tarja_id: 'T1', equipo: 'CF-03', fecha_apertura: '2026-11-02', orden: 3, item: 'Luces', estado: 'cerrado', fecha_cierre: '2026-11-04', motivo_cierre: 'Repuesto pedido', cerrado_por: 'Bruno' }]
     );
     const r = ctx.sincronizarTrabajosPendientes_();
@@ -108,7 +108,7 @@ module.exports = {
 
   'al cerrar una falla desde el panel se espeja en la hoja al instante': () => {
     const { ctx, tp } = armar(
-      [{ 'CÓDIGO': 'CF-03', EQUIPO: 'x', FECHA: new Date(2026, 10, 2), 'DESCRIPCIÓN TRABAJOS': 'Luces', ESTADO: 'A revisar', 'ID TRABAJO': 'P1' }],
+      [{ 'CÓDIGO': 'CF-03', EQUIPO: 'x', FECHA: new Date(2026, 10, 2), 'DESCRIPCIÓN TRABAJOS': 'Luces', ESTADO: 'Pendiente', 'ID TRABAJO': 'P1' }],
       [{ id: 'P1', tarja_id: 'T1', equipo: 'CF-03', fecha_apertura: '2026-11-02', orden: 3, item: 'Luces', estado: 'abierto' }]
     );
     ctx.cerrarPendiente_({ id: 'P1', motivo: 'Reparado' }, { nombre: 'Bruno' });
