@@ -161,9 +161,19 @@ module.exports = {
     items[0] = { orden: items[0].orden, estado: 'PROBLEMA', foto: FOTO, comentario: 'Pierde aceite' };
     abrir(ctx, { checklist: items });
     assert.strictEqual(ctx.leer_('PENDIENTES').length, 1);
-    assert.strictEqual(ctx.__avisos.length, 1);
-    assert.strictEqual(ctx.__avisos[0].aviso.prioridad, 'critica');
-    assert.strictEqual(JSON.stringify(ctx.__avisos[0].aviso.destinatarios), JSON.stringify([{ con_modulo: 'TARJAS' }]));
+    const fallas = ctx.__avisos.filter((a) => a.aviso.prioridad === 'critica');
+    assert.strictEqual(fallas.length, 1);
+    assert.strictEqual(JSON.stringify(fallas[0].aviso.destinatarios), JSON.stringify([{ con_modulo: 'TARJAS' }]));
+  },
+  'abrir avisa por app INGECO a quienes tienen el módulo TARJAS': () => {
+    const ctx = armar();
+    abrir(ctx);
+    const av = ctx.__avisos.filter((a) => /arrancó/.test(a.aviso.titulo));
+    assert.strictEqual(av.length, 1);
+    assert.strictEqual(av[0].aviso.titulo, 'CF-03 arrancó · PÉREZ JUAN');
+    assert.ok(/horómetro 4800/.test(av[0].aviso.cuerpo));
+    assert.strictEqual(JSON.stringify(av[0].aviso.destinatarios), JSON.stringify([{ con_modulo: 'TARJAS' }]));
+    assert.ok(/^apertura-/.test(av[0].aviso.clave_unica));
   },
   'operador manual queda marcado y en OPERADORES_MANUALES': () => {
     const ctx = armar();

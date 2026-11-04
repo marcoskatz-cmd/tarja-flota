@@ -244,6 +244,20 @@ function abrirTarja_(p) {
         String(p.motivo_correccion).trim());
     }
 
+    // Aviso de apertura a quienes tienen el módulo (pedido de Marcos: saber al momento quién arrancó).
+    try {
+      notificarAppIngeco_(CFG.MODULO, {
+        destinatarios: [{ con_modulo: CFG.MODULO }],
+        tipo: 'aviso_general', prioridad: 'normal',
+        titulo: equipo.codigo + ' arrancó · ' + operador,
+        cuerpo: String(equipo.descripcion || '') + ' · ' + ts.slice(11, 16) + ' hs · horómetro ' + horomIni +
+          (p.obra ? ' · ' + String(p.obra).trim() : (equipo.lugar ? ' · ' + equipo.lugar : '')) +
+          (corregido ? ' · horómetro corregido' : ''),
+        url_destino: CFG.URL_PANEL,
+        clave_unica: 'apertura-' + id
+      });
+    } catch (eAv) { }
+
     return {
       ya_existia: false,
       tarja: tarjaPublica_(buscarPorId_(hoja, id)),
