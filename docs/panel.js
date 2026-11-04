@@ -238,7 +238,7 @@ async function abrirEquipo(codigo) {
             <td>${esc(t.operador)}${t.cierre_tercero === 'SI' ? ' <span class="etq sin_tarja">cerró otro</span>' : ''}${t.excepcion === 'SI' ? ' <span class="etq sin_tarja">corregido</span>' : ''}</td>
             <td class="n">${num(t.horom_ini)} → ${num(t.horom_fin)}</td>
             <td class="n">${t.estado === 'cerrada' ? `<b>${num(t.horas)}</b>` : esc(t.estado)}</td>
-            <td>${t.foto_horom_ini ? `<a href="${esc(t.foto_horom_ini)}" target="_blank" rel="noopener">inicio</a>` : ''} ${t.foto_horom_fin ? `<a href="${esc(t.foto_horom_fin)}" target="_blank" rel="noopener">fin</a>` : ''}</td>
+            <td>${t.foto_horom_ini ? linkFoto(t.foto_horom_ini, 'inicio') : ''} ${t.foto_horom_fin ? linkFoto(t.foto_horom_fin, 'fin') : ''}</td>
             <td>${t.estado === 'anulada' ? '' : `<button class="boton chico" data-anular="${esc(t.id)}">Anular</button>`}</td>
           </tr>`).join('') || '<tr><td colspan="6" class="vacio">Todavía no tiene jornadas.</td></tr>'}
         </tbody>
@@ -257,6 +257,7 @@ async function abrirEquipo(codigo) {
     </div>`;
 
   document.getElementById('cerrarHoja').onclick = cerrarHoja;
+  enlazarFotos(hojaCaja);
   enlazarFallas(hojaCaja, () => abrirEquipo(codigo));
   document.getElementById('rodado').onchange = async (ev) => {
     try { await pedir('set_equipo', { codigo, tipo_rodado: ev.target.value }); } catch (e) { alert(e.message); }
@@ -304,19 +305,33 @@ async function recargarSilencioso() {
 
 // ---------- Fallas ----------
 
+function nombreEquipo(codigo) {
+  const e = S.hoy.equipos.find((x) => x.codigo === codigo);
+  return e ? e.descripcion : '';
+}
+
 function filaFalla(p, sinCodigo) {
+  const eq = sinCodigo ? '' : `<span class="cod">${esc(p.equipo)}</span>`;
+  const nombre = sinCodigo ? '' : nombreEquipo(p.equipo);
   return `
-    <div class="fila" style="cursor:default">
+    <div class="fila falla-fila" style="cursor:default">
       <span class="pt sin_tarja"></span>
-      ${sinCodigo ? '' : `<span class="cod">${esc(p.equipo)}</span>`}
-      <span class="cuerpo"><span class="t">${esc(p.item)}</span>
-        <span class="m">${esc(p.comentario || 'Sin comentario')} · ${esc(p.fecha_apertura)}${p.foto ? ` · <a href="${esc(p.foto)}" target="_blank" rel="noopener">foto</a>` : ''}</span></span>
+      ${eq}
+      <span class="cuerpo ${sinCodigo ? '' : 'abre-eq'}" ${sinCodigo ? '' : `data-abrir="${esc(p.equipo)}" role="button" tabindex="0"`}>
+        ${nombre ? `<span class="eq-nombre">${esc(nombre)}</span>` : ''}
+        <span class="t">${esc(p.item)}</span>
+        <span class="m">${esc(p.comentario || 'Sin comentario')} · ${esc(p.fecha_apertura)}${p.foto ? ` · ${linkFoto(p.foto, 'foto')}` : ''}</span></span>
       <span class="der"><select data-falla="${esc(p.id)}" style="width:auto;min-height:36px;font-size:.85rem">
         <option value="">Cerrar como…</option>${S.pend.motivos.map((m) => `<option>${esc(m)}</option>`).join('')}</select></span>
     </div>`;
 }
 
 function enlazarFallas(raiz, despues) {
+  raiz.querySelectorAll('[data-abrir]').forEach((el) => {
+    const ir = () => abrirEquipo(el.dataset.abrir);
+    el.onclick = ir;
+    el.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ir(); } };
+  });
   raiz.querySelectorAll('[data-falla]').forEach((s) => {
     s.onchange = async () => {
       if (!s.value) return;
@@ -340,7 +355,44 @@ function verFallas(cont) {
   cont.innerHTML = p.length
     ? `<p class="sub">Problemas marcados en el checklist que todavía no se resolvieron.</p><div class="lista">${p.map(filaFalla).join('')}</div>`
     : '<div class="vacio">No hay fallas abiertas. Todo al día.</div>';
+  enlazarFotos(cont);
   enlazarFallas(cont);
+}
+
+// ---------- Fotos (visor) ----------
+
+// Las fotos viven en Drive; abrirlas en otra pestaña falla dentro de la app
+// (webview) y pide cuenta de Google. Se muestran acá, en un visor propio.
+function idDrive(url) {
+  const m = String(url || '').match(/\/d\/([-\w]{20,})|[?&]id=([-\w]{20,})/);
+  return m ? (m[1] || m[2]) : '';
+}
+function urlImagen(url) {
+  const id = idDrive(url);
+  return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w1600` : url;
+}
+function linkFoto(url, texto) {
+  return `<a href="${esc(url)}" data-foto="${esc(url)}" rel="noopener">${esc(texto)}</a>`;
+}
+function enlazarFotos(raiz) {
+  raiz.querySelectorAll('[data-foto]').forEach((a) => {
+    a.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); verFoto(a.dataset.foto); };
+  });
+}
+function verFoto(url) {
+  let v = document.getElementById('visor');
+  if (!v) {
+    v = document.createElement('div');
+    v.id = 'visor';
+    v.innerHTML = '<button class="cerrar" aria-label="Cerrar">✕</button><img alt="Foto"><a target="_blank" rel="noopener">Abrir en Drive</a>';
+    v.onclick = (ev) => { if (ev.target === v || ev.target.classList.contains('cerrar')) v.hidden = true; };
+    document.body.appendChild(v);
+  }
+  const img = v.querySelector('img');
+  img.src = urlImagen(url);
+  img.onerror = () => { img.alt = 'No se pudo cargar la foto. Probá "Abrir en Drive".'; };
+  v.querySelector('a').href = url;
+  v.hidden = false;
 }
 
 // ---------- Mapa ----------

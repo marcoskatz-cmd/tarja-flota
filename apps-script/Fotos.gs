@@ -34,5 +34,22 @@ function guardarFoto_(dataUrl, equipo, fecha, tipo) {
   var nombre = fecha + '-' + equipo + '-' + tipo + '-' + uuid_().substring(0, 8) + '.' + ext;
   var blob = Utilities.newBlob(bytes, mime, nombre);
   var archivo = subcarpeta_(equipo, fecha).createFile(blob);
+  // Solo si Marcos habilitó fotos por link (CONFIG FOTOS_POR_LINK=SI, lo pone compartirFotos_).
+  if (String(config_('FOTOS_POR_LINK')).toUpperCase() === 'SI') {
+    try { archivo.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { }
+  }
   return archivo.getUrl();
+}
+
+/**
+ * Comparte por link la carpeta raíz de fotos (los archivos heredan el permiso):
+ * las fotos viejas pasan a verse desde el panel. Una vez, a mano o por GET.
+ */
+function compartirFotos_() {
+  var raiz = carpeta_();
+  raiz.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  var fila = leer_('CONFIG').filter(function (c) { return String(c.clave) === 'FOTOS_POR_LINK'; })[0];
+  if (fila) actualizar_('CONFIG', fila._fila, { valor: 'SI' }); else agregar_('CONFIG', { clave: 'FOTOS_POR_LINK', valor: 'SI' });
+  CONFIG_CACHE_ = null;
+  return { carpeta: raiz.getId(), compartida: true };
 }

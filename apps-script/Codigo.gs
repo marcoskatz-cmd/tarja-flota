@@ -40,6 +40,7 @@ function doGet(e) {
     var aplicar = String(p.aplicar) === 'si';
     switch (p.action) {
       case 'sync_fuentes': return json_({ ok: true, data: syncFuentes_() });
+      case 'compartir_fotos': return json_({ ok: true, data: compartirFotos_() });
       case 'importar_partes': return json_({ ok: true, data: importarPartes_(Number(p.max) || 20000) });
       case 'sembrar_horometros': return json_({ ok: true, data: sembrarHorometros_() });
       case 'instalar_triggers': return json_({ ok: true, data: instalarTriggers_() });

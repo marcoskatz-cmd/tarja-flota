@@ -77,6 +77,7 @@ var SEED = {
     ['UMBRAL_DIF_INGECOV_HS', 100],
     ['HORAS_ABIERTA_AVISO', 16],
     ['DIAS_SIN_ACTIVIDAD', 7],
+    ['FOTOS_POR_LINK', 'NO'],
     ['SHEET_ROPA_ID', ''],
     ['SHEET_CASARES_ID', '19eyY8MImPM_-Gyzj8QcqA_yR5KDrkuu-1faJUU48N1A'],
     ['DIAS_NOMINA', 120],
