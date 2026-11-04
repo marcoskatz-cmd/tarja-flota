@@ -473,13 +473,13 @@ function importarPartes_(maxFilas) {
 
   var agregadas = 0, ultimoPorEquipo = {}, porAnio = {};
   for (var k = 0; k < n; k++) {
-    var f = vals[k][iF];
-    if (!(f instanceof Date)) continue;
+    // La fecha puede venir como Date o como texto dd/mm/aaaa (la app anterior escribe de las dos formas).
+    var fecha = fechaIso_(vals[k][iF]);
+    if (!fecha) continue;
     var cod = String(vals[k][iC] || '').trim().toUpperCase();
     if (!cod || esImplemento_(cod) || !equipos[cod]) continue;
     var he = numPD_(vals[k][iHE]), hs = numPD_(vals[k][iHS]);
     if (he === '' || hs === '' || hs < he) continue;
-    var fecha = Utilities.formatDate(f, CFG.TZ, 'yyyy-MM-dd');
     var anio = fecha.slice(0, 4);
     cargarAnio_(anio);
     var clave = claveDe_(cod, fecha, he, hs);
@@ -572,10 +572,10 @@ function importarFallas_(maxFilas) {
 
   var resp = [], pend = [], ts = tsStr_();
   vals.forEach(function (v) {
-    if (!(v[0] instanceof Date) || !(Number(v[6]) > 0)) return;
+    var fecha = fechaIso_(v[0]);
+    if (!fecha || !(Number(v[6]) > 0)) return;
     var cod = String(v[2] || '').trim().toUpperCase();
     if (!cod || esImplemento_(cod) || !equipos[cod]) return;
-    var fecha = Utilities.formatDate(v[0], CFG.TZ, 'yyyy-MM-dd');
     var orden = 0;
     String(v[8] || '').split('\n').forEach(function (linea) {
       orden++;
@@ -658,13 +658,13 @@ function posicionesDesdePartes_() {
 
   var mejor = {};
   for (var k = 0; k < n; k++) {
-    var f = vals[k][iF];
-    if (!(f instanceof Date)) continue;
+    var fIso = fechaIso_(vals[k][iF]);
+    if (!fIso) continue;
     var url = urlDeCeldaPD_(formulas[k][0], gps[k][0]);
     var m = url && String(url).match(/(-?\d{1,2}\.\d+)\s*(?:,|%2C)\s*(-?\d{1,3}\.\d+)/i);
     if (!m || !gpsValido_(m[1], m[2])) continue;
     var cod = String(vals[k][iC]).trim().toUpperCase();
-    var ts = Utilities.formatDate(f, CFG.TZ, 'yyyy-MM-dd') + ' 00:00:00';
+    var ts = fIso + ' 00:00:00';
     if (!mejor[cod] || ts >= mejor[cod].ts) {
       mejor[cod] = { lat: Number(m[1]), lon: Number(m[2]), ts: ts, op: String(vals[k][iO] || '') };
     }

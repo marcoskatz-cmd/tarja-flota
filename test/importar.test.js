@@ -35,12 +35,14 @@ module.exports = {
       parte(new Date(2026, 10, 3), 'RTP-11', 'Concha Alfredo', 1200, 1206.5),
       parte(new Date(2026, 10, 3), 'BAT-01', 'Pérez Juan', '', ''),          // implemento: no es jornada
       parte(new Date(2026, 10, 3), 'ZZ-99', 'Nadie', 1, 2),                  // equipo desconocido
-      parte('texto', 'CF-03', 'Pérez Juan', 1, 2)                            // sin fecha válida
+      parte('texto', 'CF-03', 'Pérez Juan', 1, 2),                           // sin fecha válida
+      parte('03/11/2026', 'CF-03', 'Pérez Juan', 4807, 4812)                 // fecha como texto dd/mm/aaaa
     ]);
-    assert.strictEqual(ctx.importarPartes_(), 2);
+    assert.strictEqual(ctx.importarPartes_(), 3);
     const t = ctx.leer_('TARJAS_2026');
-    assert.strictEqual(t.length, 2);
-    const cf = t.find((x) => x.equipo === 'CF-03');
+    assert.strictEqual(t.length, 3);
+    assert.ok(t.some((x) => String(x.fecha) === '2026-11-03' && Number(x.horom_fin) === 4812));
+    const cf = t.find((x) => x.equipo === 'CF-03' && String(x.fecha) === '2026-11-02');
     assert.strictEqual(String(cf.fecha), '2026-11-02');
     assert.strictEqual(cf.estado, 'cerrada');
     assert.strictEqual(Number(cf.horas), 7);
@@ -50,9 +52,9 @@ module.exports = {
     assert.ok(/^PD:2026-11-02:CF-03:/.test(cf.op_id));
     const eq = ctx.leer_('EQUIPOS');
     const cfe = eq.find((e) => e.codigo === 'CF-03');
-    assert.strictEqual(Number(cfe.horom_tarja), 4807);
+    assert.strictEqual(Number(cfe.horom_tarja), 4812);
     assert.strictEqual(cfe.origen_horom, 'PARTES');
-    assert.strictEqual(cfe.ultima_tarja, '2026-11-02');
+    assert.strictEqual(cfe.ultima_tarja, '2026-11-03');
     assert.strictEqual(cfe.ultimo_operador, 'Pérez Juan');
     const rtp = eq.find((e) => e.codigo === 'RTP-11');
     assert.strictEqual(Number(rtp.horom_tarja), 1206.5);
