@@ -54,11 +54,25 @@ const S = {
   tab: 'equipos',
   kpi: '',              // filtro por número del resumen: '' | abierta | cerrada | sin_tarja | fallas
   buscar: '',
-  mes: null             // {anio, mes} de la pestaña Horas
+  mes: null,            // {anio, mes} de la pestaña Horas
+  actualizado: ''       // hora de la última respuesta del servidor ('' = se ve lo guardado)
 };
+function marcarActualizado() { S.actualizado = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }); }
+
+// Qué estados entran en cada número del resumen (el filtro usa lo mismo que
+// el conteo, así el número y la lista siempre coinciden).
+const KPI_ESTADOS = { abierta: ['abierta', 'trabajando'], cerrada: ['cerrada'], sin_tarja: ['sin_tarja'] };
+
+/** "En curso · 07:30", o con la fecha si la jornada viene de otro día. */
+function textoEnCurso(e) {
+  if (!e.desde_fecha || !S.hoy || e.desde_fecha === S.hoy.fecha) return `En curso · ${esc(e.desde)}`;
+  const ayer = new Date(S.hoy.fecha + 'T12:00:00'); ayer.setDate(ayer.getDate() - 1);
+  const f = ayer.toISOString().slice(0, 10) === e.desde_fecha ? 'ayer' : `${e.desde_fecha.slice(8, 10)}/${e.desde_fecha.slice(5, 7)}`;
+  return `En curso desde ${f} ${esc(e.desde)}`;
+}
 
 const ESTADO = {
-  abierta: { orden: 0, txt: (e) => `En curso · ${esc(e.desde)}` },
+  abierta: { orden: 0, txt: textoEnCurso },
   trabajando: { orden: 1, txt: () => 'Cargó combustible hoy' },
   cerrada: { orden: 2, txt: (e) => `${num(e.horas)} h hoy` },
   sin_tarja: { orden: 3, txt: () => 'Sin tarja hoy' },
@@ -90,6 +104,7 @@ async function cargar() {
   try {
     [S.hoy, S.config, S.pend] = await Promise.all([pedir('hoy'), pedir('equipos_config'), pedir('pendientes')]);
   } catch (e) { return errorEn(app, e); }
+  marcarActualizado();
   guardarCache();
   pintar();
 }
@@ -102,14 +117,17 @@ function fallasDe(codigo) {
 
 function pintar() {
   const c = { abierta: 0, cerrada: 0, sin_tarja: 0 };
-  S.hoy.equipos.forEach((e) => { const k = e.estado === 'trabajando' ? 'abierta' : e.estado; if (c[k] != null) c[k]++; });
+  S.hoy.equipos.forEach((e) => { Object.keys(KPI_ESTADOS).forEach((k) => { if (KPI_ESTADOS[k].includes(e.estado)) c[k]++; }); });
+  const viejas = S.hoy.equipos.filter((e) => e.estado === 'abierta' && e.desde_fecha && e.desde_fecha !== S.hoy.fecha);
   const kpi = (id, n, txt) => `<button class="kpi ${id} ${S.kpi === id ? 'activa' : ''}" data-kpi="${id}"><b>${n}</b><span>${txt}</span></button>`;
   const tab = (id, txt, n) => `<button class="${S.tab === id ? 'activa' : ''}" data-tab="${id}">${txt}${n != null ? `<i>${n}</i>` : ''}</button>`;
   const diag = S.hoy.diagnostico || [];
 
   app.innerHTML = `
     ${diag.length ? `<div class="banner"><b>Revisar planillas:</b> ${diag.slice(0, 2).map((x) => esc(x.detalle)).join(' · ')}</div>` : ''}
-    <div class="seccion-t">Hoy · ${esc(fechaLarga(S.hoy.fecha))}</div>
+    ${viejas.length ? `<div class="banner"><b>${viejas.length === 1 ? 'Una jornada quedó abierta' : viejas.length + ' jornadas quedaron abiertas'} de otro día:</b> ${viejas.map((e) => esc(e.codigo) + ' (' + esc(e.operador) + ')').join(', ')}. Figuran en curso hasta que alguien las cierre.</div>` : ''}
+    <div class="seccion-t">Hoy · ${esc(fechaLarga(S.hoy.fecha))}
+      <span class="actualizado">${S.actualizado ? 'Actualizado ' + esc(S.actualizado) : 'Datos guardados'} · <a href="#" id="refrescar">Actualizar</a></span></div>
     <div class="kpis">
       ${kpi('abierta', c.abierta, 'en curso')}
       ${kpi('cerrada', c.cerrada, 'cerradas')}
@@ -124,6 +142,11 @@ function pintar() {
     </div>
     <div id="contenido"></div>`;
 
+  document.getElementById('refrescar').onclick = (ev) => {
+    ev.preventDefault();
+    ev.target.textContent = 'Actualizando…';
+    recargarSilencioso().catch((e) => { aviso('No se pudo actualizar: ' + (e.message || e)); pintar(); });
+  };
   app.querySelectorAll('[data-kpi]').forEach((b) => {
     b.onclick = () => {
       const k = b.dataset.kpi;
@@ -149,7 +172,7 @@ function fechaLarga(iso) {
 function verEquipos(cont) {
   const q = norm(S.buscar);
   const lista = S.hoy.equipos
-    .filter((e) => !S.kpi || e.estado === S.kpi)
+    .filter((e) => !S.kpi || (KPI_ESTADOS[S.kpi] || [S.kpi]).includes(e.estado))
     .filter((e) => !q || norm([e.codigo, e.descripcion, e.lugar, e.operador].join(' ')).includes(q))
     .sort((a, b) => (ESTADO[a.estado].orden - ESTADO[b.estado].orden) || cmpCod(a.codigo, b.codigo));
   const inactivos = S.config.equipos.filter((e) => String(e.activo_tarja).toUpperCase() !== 'SI').sort((a, b) => cmpCod(a.codigo, b.codigo));
@@ -299,6 +322,7 @@ document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !hoja.
 
 async function recargarSilencioso() {
   [S.hoy, S.config, S.pend] = await Promise.all([pedir('hoy'), pedir('equipos_config'), pedir('pendientes')]);
+  marcarActualizado();
   guardarCache();
   pintar();
 }

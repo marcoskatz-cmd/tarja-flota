@@ -37,7 +37,17 @@ function panelHoy_(p) {
   var combHoy = {};
   try { combHoy = equiposConCombustibleHoy_() || {}; } catch (e) { combHoy = {}; }
 
-  var equipos = activosTarja_().map(function (e) {
+  // Un equipo con jornada abierta se muestra siempre, aunque mientras tanto
+  // lo hayan marcado como "no tarja": si no, lo que está en curso desaparece.
+  var lista = activosTarja_();
+  var vistos = {};
+  lista.forEach(function (e) { vistos[String(e.codigo).toUpperCase()] = true; });
+  leer_('EQUIPOS').forEach(function (e) {
+    var c = String(e.codigo).toUpperCase();
+    if (!vistos[c] && abiertas[c]) { vistos[c] = true; lista.push(e); }
+  });
+
+  var equipos = lista.map(function (e) {
     var c = String(e.codigo).toUpperCase();
     var mias = tarjasHoy.filter(function (t) { return String(t.equipo).toUpperCase() === c; })
       .sort(function (a, b) { return String(a.ts_apertura) < String(b.ts_apertura) ? -1 : 1; });
@@ -57,6 +67,7 @@ function panelHoy_(p) {
       estado: estado, horas: Math.round(horas * 10) / 10, jornadas: mias.length,
       operador: ab ? String(ab.operador) : (ultima ? String(ultima.operador) : (combHoy[c] || String(e.ultimo_operador || ''))),
       desde: ab ? String(ab.ts_apertura).slice(11, 16) : '',
+      desde_fecha: ab ? String(ab.ts_apertura).slice(0, 10) : '',
       ultima_tarja: String(e.ultima_tarja || ''),
       horom_tarja: e.horom_tarja === '' ? '' : Number(e.horom_tarja),
       problemas_hoy: fallasHoy.filter(function (f) { return String(f.equipo).toUpperCase() === c; }).length,
