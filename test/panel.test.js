@@ -60,6 +60,20 @@ module.exports = {
     assert.strictEqual(h.fecha, '2026-10-19');
     assert.ok(Array.isArray(h.diagnostico));
   },
+  'hoy: la jornada abierta trae la fecha de apertura y el equipo sigue aunque lo pasen a "no tarja"': () => {
+    const ctx = armar();
+    abrir(ctx);
+    const antes = ctx.RUTAS_PANEL.hoy(S).equipos.find((e) => e.codigo === 'CF-03');
+    assert.strictEqual(antes.estado, 'abierta');
+    assert.match(antes.desde_fecha, /^\d{4}-\d{2}-\d{2}$/);
+    assert.match(antes.desde, /^\d{2}:\d{2}$/);
+    ctx.RUTAS_PANEL.set_equipo(Object.assign({ codigo: 'CF-03', activo_tarja: 'NO' }, S));
+    const h = ctx.RUTAS_PANEL.hoy(S);
+    const despues = h.equipos.find((e) => e.codigo === 'CF-03');
+    assert.ok(despues, 'con jornada abierta el equipo no desaparece del panel');
+    assert.strictEqual(despues.estado, 'abierta');
+    assert.strictEqual(h.equipos.length, 3);
+  },
   'hoy: equipo con tarja reciente pero no hoy = sin_tarja': () => {
     const ctx = armar();
     const h = ctx.RUTAS_PANEL.hoy(S);
